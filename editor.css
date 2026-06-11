@@ -87,6 +87,23 @@ body.ed-previewing .ed-backbtn{ display:block; }
 
 body.ed-previewing .ed-ui-outline, body.ed-previewing .ed-uibar{ display:none !important; }
 
+/* ─── 참조 이미지 오버레이(REFERENCE) ───
+   타깃 스크린샷을 게임 위에 반투명으로 깔아 UI 1:1 정렬. JS(refTrack)가 #fit-root 박스에 맞춰 left/top/w/h 설정.
+   z-index 99990: 게임 렌더 위 + 에디터 크롬(툴바100000·기즈모99998) 아래 → 에디터 조작 항상 가능.
+   pointer-events:none: 밑의 게임 UI/3D(기즈모·캔버스 선택)를 그대로 클릭/드래그. */
+.ed-ref-overlay{ position:fixed; z-index:99990; pointer-events:none; display:none;
+  object-fit:fill; image-rendering:auto; }
+/* 참조 패널 — 좌측 툴바 옆 플로팅(에디터 크롬과 같은 레벨, 컨트롤 클릭 가능) */
+.ed-refpanel{ position:fixed; top:8px; left:128px; width:248px; z-index:100001; display:none;
+  background:#141a24f6; color:#dfe7f2; border:1px solid #3b73d6; border-radius:10px;
+  padding:8px 10px 12px; font:12px system-ui,sans-serif; box-shadow:0 6px 24px #0009; }
+.ed-refdrop{ margin:8px 0; padding:14px 10px; border:2px dashed #3a4a63; border-radius:8px; text-align:center;
+  background:#0e131c66; cursor:pointer; color:#aebfd6; font-size:11px; line-height:1.6; }
+.ed-refdrop.over{ border-color:#5b93f6; background:#1c2740; }
+.ed-refthumb{ display:block; max-width:100%; max-height:120px; margin:6px auto; border-radius:6px;
+  background:#0e131c; border:1px solid #2c3a52; }
+body.ed-previewing .ed-ref-overlay, body.ed-previewing .ed-refpanel{ display:none !important; }
+
 /* ─── 디바이스 미리보기(?res=WxH) — 기기 베젤 + 어두운 백드롭 ───
    게임 JS(updateViewportScale)가 #fit-root 를 기기 dims 박스로 만들고 .device-frame/.device-mode 를 토글.
    여기선 룩(딤·베젤·라운드)만 입힌다. 배포본엔 editor.css 가 없으니 영향 0. */

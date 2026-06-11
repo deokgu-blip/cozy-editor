@@ -142,6 +142,8 @@
     mkBtn('↶ Undo','되돌리기(Cmd/Ctrl+Z)',()=>doUndo());
     mkBtn('펄스','머리 부풂 미리보기',()=>{ try{ API.deployAll(); API.pulseHeads(); }catch(e){} });
     const rotBtn=mkBtn('🔄 회전','모델 회전 미리보기 켜기/끄기(기본 회전속도)',()=>setRotPreview(!rotPreview)); window.__edRotBtn=rotBtn;
+    // 참조 이미지 오버레이: 타깃 스크린샷을 게임 위에 반투명으로 깔아 UI를 1:1 정렬(클라이언트 전용·서버 불필요).
+    const refBtn=mkBtn('🖼 참조','참조 이미지(스크린샷)를 게임 위에 반투명 오버레이 → UI 1:1 정렬',()=>toggleRefPanel()); window.__edRefBtn=refBtn;
     mkBtn('🧊 복셀편집','이 스테이지 복셀 편집',()=>enterVoxelEdit());
     // 코인·설정·파워업 등 모든 2D UI 편집 진입(사용자가 '코인/설정이 안 보인다' → 이 버튼 뒤에 숨어있던 문제 해소: 라벨·강조).
     const uiBtn=mkBtn('🖼 UI 편집','코인·설정·레벨·파워업·클리어 등 모든 2D UI: 위치·크기·회전·이미지교체',()=>toggleUIMode()); window.__edUIBtn=uiBtn; uiBtn.classList.add('ed-ui-cta');
@@ -853,6 +855,97 @@
   }
   function updateVInfo(){ const e=document.getElementById('ed-vinfo'); if(!e)return; let valid='OK'; try{ encodeVox(EV); }catch(err){ valid='⚠ '+err.message; } e.textContent='복셀 '+EV.length+' · '+valid; }
 
+  // ========== 참조 이미지 오버레이 (REFERENCE) — 타깃 스크린샷을 게임 위에 반투명으로 깔아 UI 1:1 정렬 ==========
+  //  - 100% 클라이언트(FileReader/dataURI) → 정적/공개 배포에서도 서버 없이 동작.
+  //  - 오버레이 <img> 는 #fit-root(=기기박스 ?res / 없으면 게임영역)의 화면 박스에 맞춰 정렬 → 같은 스케일로 겹침.
+  //  - pointer-events:none → 밑의 게임 UI/3D(기즈모·캔버스 선택)를 그대로 클릭/드래그 가능.
+  //  - z-index: 게임 렌더 위 + 에디터 크롬(툴바100000·기즈모99998) 아래(99990) → 에디터 조작은 항상 가능.
+  let refImg=null, refPanel=null, refTrackRAF=0, refVisible=true, refOpacity=0.5, refLoaded=false;
+  function fitRootRect(){
+    const fr=document.getElementById('fit-root');
+    if (fr){ const r=fr.getBoundingClientRect(); if(r.width>4&&r.height>4) return r; }
+    // 폴백: 게임 캔버스(없으면 윈도우 전체)
+    try{ if(API.canvas){ const r=API.canvas.getBoundingClientRect(); if(r.width>4&&r.height>4) return r; } }catch(e){}
+    return {left:0, top:0, width:window.innerWidth, height:window.innerHeight};
+  }
+  function ensureRefImg(){
+    if (refImg) return refImg;
+    refImg=el('img','ed-ref-overlay'); refImg.alt=''; refImg.draggable=false;
+    document.body.appendChild(refImg);
+    return refImg;
+  }
+  function refTrack(){
+    refTrackRAF=0;
+    if (refImg && refImg.style.display!=='none'){
+      const r=fitRootRect();
+      refImg.style.left=r.left+'px'; refImg.style.top=r.top+'px';
+      refImg.style.width=r.width+'px'; refImg.style.height=r.height+'px';
+    }
+    // 게임 fit 이 늦게 정착(visualViewport·타이머)하므로 표시 중엔 가볍게 추적.
+    if (refLoaded && refVisible) scheduleRefTrack();
+  }
+  function scheduleRefTrack(){ if(!refTrackRAF) refTrackRAF=requestAnimationFrame(refTrack); }
+  function applyRefVisible(){
+    if(!refImg) return;
+    refImg.style.display = (refLoaded && refVisible) ? 'block' : 'none';
+    if (refLoaded && refVisible){ refImg.style.opacity=String(refOpacity); scheduleRefTrack(); }
+  }
+  function loadRefFile(file){
+    if(!file) return; const rd=new FileReader();
+    rd.onload=()=>{ ensureRefImg().src=rd.result; refLoaded=true; refVisible=true; applyRefVisible(); buildRefPanel(); flash('참조 이미지 로드됨 — 반투명 오버레이로 정렬'); };
+    rd.readAsDataURL(file);
+  }
+  function clearRef(){
+    refLoaded=false;
+    if(refImg){ refImg.src=''; refImg.style.display='none'; }
+    buildRefPanel(); flash('참조 이미지 제거됨');
+  }
+  function buildRefPanel(){
+    if(!refPanel){ refPanel=el('div','ed-refpanel'); document.body.appendChild(refPanel); }
+    refPanel.innerHTML='';
+    refPanel.appendChild(el('div','ed-sec','🖼 참조 이미지'));
+    // 파일 선택(클라이언트 전용 — 서버 호출 없음)
+    const fileIn=el('input'); fileIn.type='file'; fileIn.accept='image/*'; fileIn.style.display='none';
+    fileIn.addEventListener('change', ()=>{ if(fileIn.files[0]) loadRefFile(fileIn.files[0]); });
+    refPanel.appendChild(fileIn);
+    if(!refLoaded){
+      const dz=el('div','ed-refdrop','📁 클릭/드롭으로 참조 스크린샷 불러오기');
+      dz.onclick=()=>fileIn.click();
+      dz.addEventListener('dragover', e=>{ e.preventDefault(); dz.classList.add('over'); });
+      dz.addEventListener('dragleave', ()=>dz.classList.remove('over'));
+      dz.addEventListener('drop', e=>{ e.preventDefault(); dz.classList.remove('over'); if(e.dataTransfer.files[0]) loadRefFile(e.dataTransfer.files[0]); });
+      refPanel.appendChild(dz);
+      refPanel.appendChild(el('div','ed-tip','타깃 화면 스크린샷을 올리면 게임 위에 반투명으로 겹쳐서 보여줍니다. 우리 UI를 드래그/슬라이더로 그 위치에 맞추세요.'));
+      return;
+    }
+    // 미리보기 썸네일 + 교체/제거
+    const thumb=el('img','ed-refthumb'); thumb.src=refImg?refImg.src:''; refPanel.appendChild(thumb);
+    // 투명도 슬라이더(0~100%)
+    const or=el('div','ed-row'); or.appendChild(el('label','ed-lbl','투명도'));
+    const os=el('input','ed-range'); os.type='range'; os.min=0; os.max=100; os.step=1; os.value=Math.round(refOpacity*100);
+    const on=el('span','ed-num'); on.textContent=Math.round(refOpacity*100)+'%';
+    os.addEventListener('input', ()=>{ refOpacity=(+os.value)/100; on.textContent=os.value+'%'; if(refImg) refImg.style.opacity=String(refOpacity); });
+    or.appendChild(os); or.appendChild(on); refPanel.appendChild(or);
+    // 보이기/숨기기 토글
+    const tr=el('div','ed-row');
+    const tb=el('span','ed-uibtn',refVisible?'👁 표시 중(숨기기)':'🚫 숨김(표시)'); if(refVisible) tb.classList.add('on');
+    tb.onclick=()=>{ refVisible=!refVisible; applyRefVisible(); buildRefPanel(); };
+    const rep=el('span','ed-uibtn','🔄 교체'); rep.onclick=()=>fileIn.click();
+    const cl=el('span','ed-uibtn','🗑 제거'); cl.onclick=()=>clearRef();
+    tr.appendChild(tb); tr.appendChild(rep); tr.appendChild(cl); refPanel.appendChild(tr);
+    refPanel.appendChild(el('div','ed-tip','오버레이는 클릭이 통과(pointer-events:none)되어 밑의 게임 UI·3D를 그대로 편집할 수 있습니다. 기기(📱) 선택 시 기기박스에 맞춰 정렬됩니다.'));
+  }
+  function toggleRefPanel(){
+    if(!refPanel){ buildRefPanel(); }
+    const showing = refPanel.style.display!=='none' && refPanel.dataset.open==='1';
+    refPanel.dataset.open = showing ? '0' : '1';
+    refPanel.style.display = showing ? 'none' : 'block';
+    if(window.__edRefBtn) window.__edRefBtn.classList.toggle('on', !showing);
+    if(!showing){ buildRefPanel(); refPanel.style.display='block'; refPanel.dataset.open='1'; if(window.__edRefBtn) window.__edRefBtn.classList.add('on'); }
+  }
+  window.addEventListener('resize', ()=>{ if(refLoaded&&refVisible) scheduleRefTrack(); });
+  if (window.visualViewport){ window.visualViewport.addEventListener('resize', ()=>{ if(refLoaded&&refVisible) scheduleRefTrack(); }); }
+
   // ---- boot editor ----
   buildUI();
   API.canvas.addEventListener('pointerdown', onCanvasDown, true);
@@ -872,6 +965,12 @@
     setRotPreview, rotPreviewOn:()=>rotPreview, flashRot:(mode)=>{ flashRotPreview({rot:mode==='crisis'?'crisis':true}); },
     modelYaw:()=>{ try{ return API.modelGroup.rotation.y; }catch(e){ return 0; } },
     rotTotal:()=>rotTotal, rotActive:()=>rotPreviewActive(),
+    ref:{ toggle:toggleRefPanel, set:(uri)=>{ ensureRefImg().src=uri; refLoaded=true; refVisible=true; applyRefVisible(); if(refPanel)buildRefPanel(); },
+          opacity:(v)=>{ refOpacity=Math.max(0,Math.min(1,+v)); if(refImg)refImg.style.opacity=String(refOpacity); if(refPanel)buildRefPanel(); },
+          show:(on)=>{ refVisible=!!on; applyRefVisible(); if(refPanel)buildRefPanel(); },
+          clear:clearRef, loaded:()=>refLoaded, visible:()=>refVisible, opacityVal:()=>refOpacity,
+          rect:()=>{ if(!refImg) return null; const r=refImg.getBoundingClientRect(); return {left:r.left,top:r.top,width:r.width,height:r.height,pe:getComputedStyle(refImg).pointerEvents,z:getComputedStyle(refImg).zIndex,opacity:getComputedStyle(refImg).opacity,display:getComputedStyle(refImg).display}; },
+          fitRect:()=>{ const r=fitRootRect(); return {left:r.left,top:r.top,width:r.width,height:r.height}; } },
     ui:{ toggle:toggleUIMode, mode:()=>uiMode, list:()=>Object.keys(UI_META), sel:()=>uiSel&&uiSel.id,
          select:(id)=>selectUI(UI_META[id]||UI_TREE[0].items[0]),
          set:(id,k,v)=>{ uiPushUndo(id); uiObj(id)[k]=v; applyUI(id); uiOutlineUpdate(); syncUIBar(); buildTreeDots&&buildTreeDots(); },
