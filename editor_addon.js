@@ -254,7 +254,7 @@
     if (e.code==='Escape' && previewing){ e.preventDefault(); togglePreview(); return; }   // 미리보기 → Esc로 편집 복귀
     if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
     if ((e.metaKey||e.ctrlKey) && e.code==='KeyZ'){ e.preventDefault(); doUndo(); return; }
-    if (e.code==='KeyQ'){ setMode('select'); if(tc) tc.detach(); sel=null; }
+    if (e.code==='KeyQ'){ setMode('select'); if(tc) tc.detach(); sel=null; try{ guideReadoutPoke(); }catch(e2){} }
     else if (e.code==='KeyW') setMode('translate');
     else if (e.code==='KeyE') setMode('scale');
     else if (e.code==='KeyR') setMode('rotate');
@@ -552,7 +552,7 @@
       mv={x:e.clientX,y:e.clientY,dx0:o.dx||0,dy0:o.dy||0}; uiOutline.setPointerCapture(e.pointerId);
     });
     uiOutline.addEventListener('pointermove', e=>{
-      if(!mv||!uiSel) return; const s=gameScale(); const o=uiObj(uiSel.id);
+      if(!mv||!uiSel) return; const s=gameScale()*((typeof sbsShrink==='function')?(sbsShrink()||1):1); const o=uiObj(uiSel.id);
       o.dx=Math.round(mv.dx0+(e.clientX-mv.x)/s); o.dy=Math.round(mv.dy0+(e.clientY-mv.y)/s);
       applyUI(uiSel.id); uiOutlineUpdate(); syncUIBar();
     });
@@ -725,6 +725,9 @@
     previewing=!previewing;
     window.__EDITOR_PAUSE=!previewing ? true : false;
     if (tc) tc.detach(); sel=null;
+    // 미리보기 진입: 나란히(B) transform 제거(게임 원위치) / 복귀 시 다시 적용.
+    if (previewing){ const fr=document.getElementById('fit-root'); if(fr) fr.style.transform=''; if(typeof sbsRAF!=='undefined'&&sbsRAF){ cancelAnimationFrame(sbsRAF); sbsRAF=0; } }
+    else if (typeof refMode!=='undefined' && refMode==='B'){ setTimeout(()=>{ if(typeof scheduleSbs==='function') scheduleSbs(); }, 0); }
     document.body.classList.toggle('ed-previewing', previewing);
     if (window.__edPreviewBtn) window.__edPreviewBtn.textContent = previewing ? '■ 편집으로' : '▶ 미리보기';
     if (!previewing){ try{ API.config.AUTO_ROTATE=false; API.deployAll(); }catch(e){} }
@@ -764,6 +767,11 @@
     if (vEdit) return;
     vEdit=true; window.__EDITOR_PAUSE=true; API.config.AUTO_ROTATE=false;
     if (tc) tc.detach(); sel=null;
+    // 복셀편집은 캔버스 raycast 사용 → 나란히(B) transform 제거(좌표 정확). 종료 시 재적용.
+    { const fr=document.getElementById('fit-root'); if(fr) fr.style.transform=''; if(typeof sbsRAF!=='undefined'&&sbsRAF){ cancelAnimationFrame(sbsRAF); sbsRAF=0; }
+      if(typeof corrLayer!=='undefined'&&corrLayer) corrLayer.style.display='none';
+      if(typeof sbsRefBox!=='undefined'&&sbsRefBox) sbsRefBox.style.display='none';
+      if(typeof sbsTag!=='undefined'&&sbsTag) sbsTag.style.display='none'; }
     API.modelGroup.rotation.set(0,0,0);
     origModelId = API.STAGES[API.stageIndex].modelId;
     EV = API.buildVox(origModelId).map(v=>({x:v.x,y:v.y,z:v.z,c:v.c}));
@@ -783,7 +791,7 @@
     showVPanel(false);
     try{ API.loadStage(API.stageIndex); }catch(e){}      // re-render via game (clone if saved, original if not)
     window.__EDITOR_PAUSE=true;
-    setTimeout(()=>{ try{ API.deployAll(); API.refreshSlotOctos(); }catch(e){} }, 60);
+    setTimeout(()=>{ try{ API.deployAll(); API.refreshSlotOctos(); }catch(e){} if(refMode==='B'){ scheduleSbs(); } }, 60);   // 나란히(B) 복귀
     flash(save?'복셀 저장됨(이 스테이지)':'편집 취소');
   }
   function commitVoxelEdit(){
@@ -863,6 +871,7 @@
   //  - pointer-events:none → 밑의 게임 UI/3D(기즈모·캔버스 선택)를 그대로 클릭/드래그 가능.
   //  - z-index: 게임 렌더 위 + 에디터 크롬(툴바100000·기즈모99998) 아래(99990) → 에디터 조작은 항상 가능.
   let refImg=null, refPanel=null, refTrackRAF=0, refVisible=true, refOpacity=0.5, refLoaded=false;
+  let refMode='A';   // 'A'=겹치기(오버레이) | 'B'=나란히(side-by-side + 대응 가이드선)
   function fitRootRect(){
     const fr=document.getElementById('fit-root');
     if (fr){ const r=fr.getBoundingClientRect(); if(r.width>4&&r.height>4) return r; }
@@ -889,8 +898,10 @@
   function scheduleRefTrack(){ if(!refTrackRAF) refTrackRAF=requestAnimationFrame(refTrack); }
   function applyRefVisible(){
     if(!refImg) return;
-    refImg.style.display = (refLoaded && refVisible) ? 'block' : 'none';
-    if (refLoaded && refVisible){ refImg.style.opacity=String(refOpacity); scheduleRefTrack(); }
+    // Mode A(겹치기)에서만 오버레이 표시. Mode B 에선 오버레이 숨기고 옆 패널(sbs)로.
+    const overlayOn = (refMode==='A' && refLoaded && refVisible);
+    refImg.style.display = overlayOn ? 'block' : 'none';
+    if (overlayOn){ refImg.style.opacity=String(refOpacity); scheduleRefTrack(); }
   }
   function loadRefFile(file){
     if(!file) return; const rd=new FileReader();
@@ -918,10 +929,20 @@
     updateGuideHUD();
     refPanel.appendChild(el('div','ed-tip','중앙선·그리드는 게임 디자인공간(390×844) 박스에 맞춰 표시됩니다(클릭 통과). 요소(코인·레벨·설정·파워업 등)를 선택하면 위치/크기를 px로 읽어 참조와 1:1로 맞출 수 있습니다.'));
   }
+  // 참조 매칭 모드 토글(A=겹치기 / B=나란히). 둘 다 같은 로드된 참조 이미지를 재사용.
+  function buildModeSeg(){
+    const seg=el('div','ed-modeseg');
+    const a=el('button','ed-segbtn'+(refMode==='A'?' on':''),'겹치기(A)'); a.title='참조를 게임 위에 반투명 오버레이';
+    const b=el('button','ed-segbtn'+(refMode==='B'?' on':''),'나란히(B)'); b.title='게임과 참조를 양옆에 같은 크기로 — 선택요소 중심선이 양쪽을 가로질러 표시';
+    a.onclick=()=>setRefMode('A'); b.onclick=()=>setRefMode('B');
+    seg.appendChild(a); seg.appendChild(b);
+    return seg;
+  }
   function buildRefPanel(){
     if(!refPanel){ refPanel=el('div','ed-refpanel'); document.body.appendChild(refPanel); }
     refPanel.innerHTML='';
     refPanel.appendChild(el('div','ed-sec','🖼 참조 이미지'));
+    refPanel.appendChild(buildModeSeg());
     // 파일 선택(클라이언트 전용 — 서버 호출 없음)
     const fileIn=el('input'); fileIn.type='file'; fileIn.accept='image/*'; fileIn.style.display='none';
     fileIn.addEventListener('change', ()=>{ if(fileIn.files[0]) loadRefFile(fileIn.files[0]); });
@@ -962,6 +983,7 @@
     refPanel.style.display = showing ? 'none' : 'block';
     if(window.__edRefBtn) window.__edRefBtn.classList.toggle('on', !showing);
     if(!showing){ buildRefPanel(); refPanel.style.display='block'; refPanel.dataset.open='1'; if(window.__edRefBtn) window.__edRefBtn.classList.add('on'); }
+    try{ selPoke(); }catch(e){}   // 참조 패널 열림/닫힘에 맞춰 선택표시 표시/숨김
   }
   window.addEventListener('resize', ()=>{ if(refLoaded&&refVisible) scheduleRefTrack(); });
   if (window.visualViewport){ window.visualViewport.addEventListener('resize', ()=>{ if(refLoaded&&refVisible) scheduleRefTrack(); }); }
@@ -1038,7 +1060,10 @@
   //  이유: HUD·설정·파워업 등은 #fit-root 직속(화면 끝 고정, 미스케일), 슬롯/큐는 #game-container(스케일) 안.
   //  둘을 같은 디자인 px 로 읽으려면 화면 박스(fit-root) 기준·gameScale 나눗셈이 일관적이고 참조 측정과 맞음.
   function selectedDesignBox(){
-    const box=fitRootRect(), s=gameScale()||1;
+    // Mode B(나란히)에선 #fit-root 에 추가 scale(shrink)이 걸려 measured rect 가 shrink 배 줄어든다.
+    //  디자인 px 은 기기독립값이어야 하므로 gameScale 에 shrink 를 곱해 나눠 보정한다(A 모드는 shrink=1).
+    const shrink = (typeof sbsShrink==='function') ? (sbsShrink()||1) : 1;
+    const box=fitRootRect(), s=(gameScale()||1)*shrink;
     const toDesign=(r)=>({ x:Math.round((r.left-box.left)/s), y:Math.round((r.top-box.top)/s),
                            w:Math.round(r.width/s), h:Math.round(r.height/s) });
     // 1) 2D UI 편집 선택
@@ -1079,10 +1104,232 @@
   }
   // 선택/드래그 변할 때 읽기 갱신 — 가이드가 켜져있으면 RAF 가 매 프레임 갱신하지만,
   // 꺼져있어도 패널이 열려있으면 즉시 갱신되도록 외부 훅에서 호출.
-  function guideReadoutPoke(){ if(refPanel&&refPanel.style.display!=='none'&&guideHUD) updateGuideHUD(); }
+  function guideReadoutPoke(){ if(refPanel&&refPanel.style.display!=='none'&&guideHUD) updateGuideHUD(); if(refMode==='B') corrPoke(); selPoke(); }
   window.addEventListener('resize', ()=>{ if(guideActive()) scheduleGuide(); });
   if (window.visualViewport){ window.visualViewport.addEventListener('resize', ()=>{ if(guideActive()) scheduleGuide(); }); }
   // .ed-previewing 시 가이드 숨김은 CSS(.ed-guide-layer)가 처리.
+
+  // ========== MODE B: 나란히(SIDE-BY-SIDE) + 대응 가이드선 (REFERENCE-MATCHING) ==========
+  //  - 게임(#fit-root)을 transform 으로 왼쪽으로 이동시켜 화면 절반에 둔다. transform 을 건 요소는
+  //    자손 position:fixed 의 컨테이닝블록이 되므로 HUD(#hud-top·설정 등 fixed 자식)도 같이 끌려간다 → 게임 통째 이동.
+  //  - 참조는 오버레이 대신 게임박스 오른쪽에 같은 픽셀 크기(=#game-container 의 화면 rect)로 별도 패널(sbsRefBox)에 둔다.
+  //  - 둘 다 같은 390×844 디자인 스케일 → 같은 디자인 px(예: Y=120) 위치가 화면상 같은 높이가 되도록 정렬한다.
+  //  - 선택/드래그 중인 요소의 중심 X/Y(디자인 px)에 가로·세로 점선을 양쪽 패널을 가로질러 그린다.
+  //  - 100% 클라이언트, pointer-events:none → 편집 통과. 정적/공개 빌드에서도 서버 없이 동작.
+  let sbsRefBox=null, sbsRefImg=null, sbsTag=null, corrLayer=null, corrH=null, corrV=null, corrBadgeH=null, corrBadgeV=null;
+  let sbsRAF=0, SBS_GAP=24, _sbsShrink=1;   // 게임박스↔참조박스 사이 간격(화면 px), 현재 적용된 축소율
+  function sbsShrink(){ return (refMode==='B') ? (_sbsShrink||1) : 1; }
+
+  function ensureSbsDom(){
+    if (sbsRefBox) return;
+    sbsRefBox=el('div','ed-sbs-ref');
+    sbsRefImg=el('img'); sbsRefImg.alt=''; sbsRefImg.draggable=false; sbsRefBox.appendChild(sbsRefImg);
+    document.body.appendChild(sbsRefBox);
+    sbsTag=el('div','ed-sbs-tag','참조'); document.body.appendChild(sbsTag);
+    corrLayer=el('div','ed-corr-layer');
+    corrH=el('div','ed-corr-line h'); corrV=el('div','ed-corr-line v');
+    corrBadgeH=el('div','ed-corr-badge'); corrBadgeV=el('div','ed-corr-badge');
+    corrLayer.appendChild(corrH); corrLayer.appendChild(corrV);
+    corrLayer.appendChild(corrBadgeH); corrLayer.appendChild(corrBadgeV);
+    document.body.appendChild(corrLayer);
+  }
+
+  // 게임을 왼쪽으로 얼마나 옮기고(필요시 같이 축소) 참조를 어디에 둘지 계산.
+  //  반환: { shiftX, shrink, gameRect(이동·축소 후 게임박스 화면 rect), refRect(참조박스 rect) }
+  //  게임박스 원래 폭(gw)+간격+참조폭(=gw)=2*gw+gap 이 윈도우 폭을 넘으면 두 패널을 같은 비율로 축소.
+  function sbsCompute(){
+    const fr=document.getElementById('fit-root'); if(!fr) return null;
+    // 현재(이동 전) 게임박스 화면 rect — transform 이 이미 걸려있으면 제거하고 측정.
+    const prevT=fr.style.transform; fr.style.transform='';
+    const gbr=gameBoxRect();           // #game-container 의 화면 rect(디자인공간 박스, --game-scale 반영)
+    fr.style.transform=prevT;
+    const gw=gbr.width, gh=gbr.height;
+    if(gw<4||gh<4) return null;
+    const W=window.innerWidth, leftPad=128+12;   // 좌측 툴바(120)+여유
+    // 우측 여백: 3D 슬라이더 패널(.ed-panel, 약 284px)이 떠있으면 그만큼 비워 겹침 방지.
+    //  UI편집 모드/패널 닫힘이면 우측 거의 풀로 사용. (uiMode 일 땐 __edPanel 숨김)
+    let rightPad=12;
+    try{ const p=window.__edPanel; if(p && getComputedStyle(p).display!=='none') rightPad=284; }catch(e){}
+    // 두 박스(게임+참조)와 간격이 들어갈 폭. 부족하면 동일 비율로 축소.
+    const avail=W-leftPad-rightPad;
+    const need=gw*2+SBS_GAP;
+    const shrink=Math.min(1, avail/need);
+    const sgw=gw*shrink, sgh=gh*shrink;
+    // 두 박스 묶음을 좌측여백 오른쪽 영역 중앙에 배치.
+    const groupW=sgw*2+SBS_GAP*shrink;
+    const startX=leftPad+Math.max(0,(avail-groupW)/2);
+    const topY=(window.innerHeight-sgh)/2;
+    const gameLeft=startX, refLeft=startX+sgw+SBS_GAP*shrink;
+    // 게임을 (원래 gbr 좌상단 → gameLeft/topY) 로 이동시키는 화면-공간 translate + scale.
+    // #fit-root 에 transform 을 거는데, #game-container 는 fit-root 중앙에 있으므로
+    //  fit-root 의 중앙을 기준으로 보정한다. 간단히: gameBox 좌상단을 목표로 옮기는 평행이동 + 중앙기준 scale.
+    return { gbr, gw, gh, shrink, sgw, sgh,
+             gameRect:{left:gameLeft, top:topY, width:sgw, height:sgh},
+             refRect:{left:refLeft, top:topY, width:sgw, height:sgh} };
+  }
+
+  function sbsApply(){
+    sbsRAF=0;
+    if(refMode!=='B'){ return; }
+    ensureSbsDom();
+    const fr=document.getElementById('fit-root'); if(!fr) return;
+    const c=sbsCompute(); if(!c){ scheduleSbs(); return; }
+    _sbsShrink=c.shrink;   // selectedDesignBox 보정용(measured rect 가 shrink 배 줄어든 것을 되돌림)
+    // 게임(#fit-root) 이동·축소: gameBox 가 c.gbr → c.gameRect 가 되도록 #fit-root 에 transform.
+    //  #game-container 는 fit-root 중앙 정렬 → fit-root 에 (scale, translate) 를 걸면
+    //  게임박스도 같은 변환을 받는다. scale 은 중앙기준이라 translate 은 '변환 후 게임박스 좌상단 - 목표' 로 역산.
+    const s=c.shrink;
+    // scale 만 먼저 적용했을 때 게임박스 좌상단 위치(중앙기준 scale → fit-root 중앙은 불변).
+    const cx=c.gbr.left+c.gbr.width/2, cy=c.gbr.top+c.gbr.height/2;
+    const scaledLeft=cx-(c.gbr.width*s)/2, scaledTop=cy-(c.gbr.height*s)/2;
+    const tx=c.gameRect.left-scaledLeft, ty=c.gameRect.top-scaledTop;
+    fr.style.transformOrigin='center center';
+    fr.style.transform='translate('+tx+'px,'+ty+'px) scale('+s+')';
+    // 참조박스 = 게임박스와 같은 크기, 오른쪽.
+    sbsRefBox.style.display='block';
+    sbsRefBox.style.left=c.refRect.left+'px'; sbsRefBox.style.top=c.refRect.top+'px';
+    sbsRefBox.style.width=c.refRect.width+'px'; sbsRefBox.style.height=c.refRect.height+'px';
+    if(refLoaded && refImg && refImg.src){ sbsRefImg.src=refImg.src; sbsRefImg.style.display='block';
+      const old=sbsRefBox.querySelector('.ed-sbs-empty'); if(old) old.remove(); }
+    else { sbsRefImg.style.display='none';
+      if(!sbsRefBox.querySelector('.ed-sbs-empty')){ const e=el('div','ed-sbs-empty','참조 이미지를 불러오면<br>여기에 같은 크기로 표시됩니다'); sbsRefBox.appendChild(e); } }
+    // '참조' 태그
+    sbsTag.style.display='block';
+    sbsTag.style.left=c.refRect.left+'px'; sbsTag.style.top=c.refRect.top+'px';
+    // 대응 가이드선 갱신
+    corrUpdate(c);
+    scheduleSbs();   // fit 정착/리사이즈 추적
+  }
+  function scheduleSbs(){ if(!sbsRAF && refMode==='B') sbsRAF=requestAnimationFrame(sbsApply); }
+
+  // 선택 요소의 중심(디자인 px)을 양쪽 패널 좌표로 변환 → 가로/세로 점선 + px 배지.
+  //  게임패널: 디자인 px → c.gameRect 안의 화면 px (gameRect 폭/높이 = 디자인 390×844 * shrink*scale).
+  //  참조패널: 같은 디자인 px → c.refRect 안의 화면 px (동일 매핑) → 두 패널에서 같은 높이/가로위치가 됨.
+  function corrUpdate(c){
+    if(!c){ c=sbsCompute(); if(!c){ if(corrLayer)corrLayer.style.display='none'; return; } }
+    const b=selectedDesignBox();   // {x,y,w,h} 디자인 px (좌상단)
+    if(!b){ if(corrLayer) corrLayer.style.display='none'; return; }
+    // 디자인 px → 패널 화면 px. 패널은 디자인공간(390×844)을 폭/높이에 꽉 채움.
+    const DW=390, DH=844;
+    const cxDesign=b.x+b.w/2, cyDesign=b.y+b.h/2;
+    const sx=c.gameRect.width/DW, sy=c.gameRect.height/DH;
+    // 레이어는 게임박스 좌단 ~ 참조박스 우단까지 전부 덮음.
+    const layLeft=c.gameRect.left, layTop=Math.min(c.gameRect.top, c.refRect.top);
+    const layRight=c.refRect.left+c.refRect.width, layBottom=Math.max(c.gameRect.top+c.gameRect.height, c.refRect.top+c.refRect.height);
+    corrLayer.style.display='block';
+    corrLayer.style.left=layLeft+'px'; corrLayer.style.top=layTop+'px';
+    corrLayer.style.width=(layRight-layLeft)+'px'; corrLayer.style.height=(layBottom-layTop)+'px';
+    // 가로선(중심 Y): 두 패널 같은 디자인 Y → 같은 화면 Y → 레이어 전체 폭에 그음.
+    const screenY=c.gameRect.top+cyDesign*sy;       // 게임/참조 top 동일(topY) → 한 값
+    corrH.style.top=(screenY-layTop)+'px';
+    // 세로선(중심 X): 게임패널 안에서의 X(참조패널에도 같은 디자인X 위치에 점 표시는 배지로). 선은 게임패널 X에 둠.
+    const screenXGame=c.gameRect.left+cxDesign*sx;
+    corrV.style.left=(screenXGame-layLeft)+'px';
+    // 참조패널의 같은 디자인X 위치(사용자가 거기에 맞추도록 보조 — 세로선을 참조에도 하나 더?)
+    //  → 가독성을 위해 세로선은 게임패널에만, 가로선은 양쪽 공통. 배지는 양쪽 끝에 px 표시.
+    // px 배지: 가로선=중심Y, 세로선=중심X(디자인 px)
+    corrBadgeH.textContent='Y '+Math.round(cyDesign);
+    corrBadgeH.style.left='2px'; corrBadgeH.style.top=(screenY-layTop)+'px';
+    corrBadgeV.textContent='X '+Math.round(cxDesign);
+    corrBadgeV.style.left=(screenXGame-layLeft)+'px'; corrBadgeV.style.top='2px';
+  }
+
+  function sbsClear(){
+    if(sbsRAF){ cancelAnimationFrame(sbsRAF); sbsRAF=0; }
+    const fr=document.getElementById('fit-root'); if(fr) fr.style.transform='';
+    if(sbsRefBox) sbsRefBox.style.display='none';
+    if(sbsTag) sbsTag.style.display='none';
+    if(corrLayer) corrLayer.style.display='none';
+  }
+
+  function setRefMode(m){
+    m = (m==='B') ? 'B' : 'A';
+    if(refMode===m){ return; }
+    refMode=m;
+    document.body.classList.toggle('ed-sbs', refMode==='B');
+    if(refMode==='B'){
+      ensureSbsDom();
+      applyRefVisible();    // 오버레이(A) 숨김
+      scheduleSbs();
+      flash('나란히(B): 게임 ↔ 참조 — 요소 선택 시 중심선이 양쪽을 가로질러 표시됩니다');
+    } else {
+      sbsClear();
+      applyRefVisible();    // 오버레이(A) 복구
+      scheduleRefTrack();
+      flash('겹치기(A): 참조가 게임 위에 반투명 오버레이로 복귀');
+    }
+    if(refPanel && refPanel.style.display!=='none') buildRefPanel();
+    selPoke();   // 모드 전환 시 선택표시를 새 패널(들)에 다시 그림
+  }
+  // 선택/드래그 변할 때 대응선 즉시 갱신(Mode B). guideReadoutPoke 와 함께 호출되도록 훅에 연결.
+  function corrPoke(){ if(refMode==='B') scheduleSbs(); }
+  window.addEventListener('resize', ()=>{ if(refMode==='B') scheduleSbs(); });
+  if (window.visualViewport){ window.visualViewport.addEventListener('resize', ()=>{ if(refMode==='B') scheduleSbs(); }); }
+
+  // ========== 선택 표시(SELECTION INDICATOR) — 위치선(크로스헤어) + 크기사각형 ==========
+  //  선택/드래그한 요소의 (1)중심 가로·세로 선 (2)경계 사각형을 그린다. 자동 대응 없음 — 위치/크기만 시각화.
+  //  Mode A: 게임 디자인박스(390×844) 위에 1세트. Mode B: 게임패널 + 참조패널 양쪽에 같은 디자인좌표로(미러).
+  //  좌표 단위는 selectedDesignBox() 와 동일(디자인공간 390×844 px, 좌상단 x/y + w/h) → 읽기 HUD와 1:1.
+  //  100% 클라이언트, pointer-events:none → 편집 통과. 정적/공개 빌드에서도 서버 없이 동작.
+  const DES_W=390, DES_H=844;
+  let selLayer=null, selRAF=0;
+  let selPanelGame=null, selPanelRef=null;   // 각 패널(클립영역) DOM — 그 안에 crosshair+rect+size 배지
+  // 한 패널 DOM 1세트 생성(crosshair h/v + rect + size 배지).
+  function makeSelPanel(){
+    const p=el('div','ed-sel-panel');
+    p._h=el('div','ed-sel-cross h'); p._v=el('div','ed-sel-cross v');
+    p._rect=el('div','ed-sel-rect'); p._size=el('div','ed-sel-size');
+    p.appendChild(p._h); p.appendChild(p._v); p.appendChild(p._rect); p.appendChild(p._size);
+    return p;
+  }
+  function ensureSelLayer(){
+    if (selLayer) return selLayer;
+    selLayer=el('div','ed-sel-layer');
+    selPanelGame=makeSelPanel(); selPanelRef=makeSelPanel();
+    selLayer.appendChild(selPanelGame); selLayer.appendChild(selPanelRef);
+    document.body.appendChild(selLayer);
+    return selLayer;
+  }
+  // 한 패널에 디자인박스 b{x,y,w,h} 를 그린다. panelRect=패널의 화면 rect(디자인 390×844 가 꽉 차는 영역).
+  function drawSelInPanel(panelEl, panelRect, b){
+    panelEl.style.display='block';
+    panelEl.style.left=panelRect.left+'px'; panelEl.style.top=panelRect.top+'px';
+    panelEl.style.width=panelRect.width+'px'; panelEl.style.height=panelRect.height+'px';
+    const sx=panelRect.width/DES_W, sy=panelRect.height/DES_H;     // 디자인 px → 패널 화면 px
+    const cx=(b.x+b.w/2)*sx, cy=(b.y+b.h/2)*sy;                    // 중심(패널 로컬 px)
+    panelEl._h.style.top=cy+'px'; panelEl._v.style.left=cx+'px';
+    const rx=b.x*sx, ry=b.y*sy, rw=Math.max(2,b.w*sx), rh=Math.max(2,b.h*sy);
+    panelEl._rect.style.left=rx+'px'; panelEl._rect.style.top=ry+'px';
+    panelEl._rect.style.width=rw+'px'; panelEl._rect.style.height=rh+'px';
+    panelEl._size.textContent=Math.round(b.w)+'×'+Math.round(b.h);
+    panelEl._size.style.left=rx+'px'; panelEl._size.style.top=Math.max(11,ry-2)+'px';
+  }
+  function hideSelPanel(p){ if(p) p.style.display='none'; }
+  // 표시 조건: 참조 패널 열림(=레이아웃 작업 중) + 선택요소 존재. 미리보기 중엔 CSS가 숨김.
+  function selActive(){ return refPanel && refPanel.style.display!=='none' && refPanel.dataset.open==='1'; }
+  function selTrack(){
+    selRAF=0;
+    if (!selActive()){ if(selLayer) selLayer.style.display='none'; return; }
+    const b=selectedDesignBox();
+    if (!b){ if(selLayer) selLayer.style.display='none'; return; }
+    ensureSelLayer();
+    selLayer.style.display='block';
+    if (refMode==='B'){
+      const c=sbsCompute();
+      if (c){ drawSelInPanel(selPanelGame, c.gameRect, b); drawSelInPanel(selPanelRef, c.refRect, b); }
+      else { hideSelPanel(selPanelGame); hideSelPanel(selPanelRef); }
+    } else {
+      // Mode A: 게임 디자인박스 = fit-root 원점 + 390×844 * gameScale (selectedDesignBox 와 동일 좌표계).
+      const fr=fitRootRect(), s=gameScale()||1;
+      drawSelInPanel(selPanelGame, {left:fr.left, top:fr.top, width:DES_W*s, height:DES_H*s}, b);
+      hideSelPanel(selPanelRef);   // A 모드엔 참조 패널 없음 → 1세트만
+    }
+    scheduleSel();   // 드래그/늦은 fit 정착 추적(선택 중에만)
+  }
+  function scheduleSel(){ if(!selRAF && selActive()) selRAF=requestAnimationFrame(selTrack); }
+  function selPoke(){ if(selActive()) scheduleSel(); else if(selLayer) selLayer.style.display='none'; }
+  window.addEventListener('resize', ()=>{ if(selActive()) scheduleSel(); });
+  if (window.visualViewport){ window.visualViewport.addEventListener('resize', ()=>{ if(selActive()) scheduleSel(); }); }
 
   // ---- boot editor ----
   buildUI();
@@ -1103,12 +1350,31 @@
     setRotPreview, rotPreviewOn:()=>rotPreview, flashRot:(mode)=>{ flashRotPreview({rot:mode==='crisis'?'crisis':true}); },
     modelYaw:()=>{ try{ return API.modelGroup.rotation.y; }catch(e){ return 0; } },
     rotTotal:()=>rotTotal, rotActive:()=>rotPreviewActive(),
-    ref:{ toggle:toggleRefPanel, set:(uri)=>{ ensureRefImg().src=uri; refLoaded=true; refVisible=true; applyRefVisible(); if(refPanel)buildRefPanel(); },
+    ref:{ toggle:toggleRefPanel, set:(uri)=>{ ensureRefImg().src=uri; refLoaded=true; refVisible=true; applyRefVisible(); if(refMode==='B') scheduleSbs(); if(refPanel)buildRefPanel(); },
           opacity:(v)=>{ refOpacity=Math.max(0,Math.min(1,+v)); if(refImg)refImg.style.opacity=String(refOpacity); if(refPanel)buildRefPanel(); },
           show:(on)=>{ refVisible=!!on; applyRefVisible(); if(refPanel)buildRefPanel(); },
           clear:clearRef, loaded:()=>refLoaded, visible:()=>refVisible, opacityVal:()=>refOpacity,
+          mode:()=>refMode, setMode:(m)=>setRefMode(m),
           rect:()=>{ if(!refImg) return null; const r=refImg.getBoundingClientRect(); return {left:r.left,top:r.top,width:r.width,height:r.height,pe:getComputedStyle(refImg).pointerEvents,z:getComputedStyle(refImg).zIndex,opacity:getComputedStyle(refImg).opacity,display:getComputedStyle(refImg).display}; },
+          // 나란히(B) 검증용: 참조박스/게임박스/대응선 화면 rect + pointer-events
+          sbsRect:()=>{ if(!sbsRefBox) return null; const r=sbsRefBox.getBoundingClientRect(); return {left:r.left,top:r.top,width:r.width,height:r.height,pe:getComputedStyle(sbsRefBox).pointerEvents,display:getComputedStyle(sbsRefBox).display}; },
+          gameRect:()=>{ const r=gameBoxRect(); return {left:r.left,top:r.top,width:r.width,height:r.height}; },
+          corrRect:()=>{ if(!corrLayer) return null; const r=corrLayer.getBoundingClientRect(); return {left:r.left,top:r.top,width:r.width,height:r.height,pe:getComputedStyle(corrLayer).pointerEvents,display:getComputedStyle(corrLayer).display,hTop:corrH&&corrH.style.top,vLeft:corrV&&corrV.style.left}; },
           fitRect:()=>{ const r=fitRootRect(); return {left:r.left,top:r.top,width:r.width,height:r.height}; } },
+    // 선택 표시(크로스헤어+사각형) 검증용: 레이어 표시여부 + 각 패널 rect/crosshair 화면 px
+    selind:{ poke:()=>{ try{ selPoke(); }catch(e){} },
+      state:()=>{
+        const vis = selLayer && selLayer.style.display!=='none';
+        const panelInfo=(p)=>{ if(!p||p.style.display==='none') return null;
+          const lr=p.getBoundingClientRect(), rr=p._rect.getBoundingClientRect();
+          // crosshair 중심(패널 로컬 px) → 화면 px
+          const hY=lr.top+parseFloat(p._h.style.top||0), vX=lr.left+parseFloat(p._v.style.left||0);
+          return { panel:{left:lr.left,top:lr.top,width:lr.width,height:lr.height},
+                   rect:{left:rr.left,top:rr.top,width:rr.width,height:rr.height},
+                   crossH_screenY:hY, crossV_screenX:vX, size:p._size.textContent,
+                   pe:getComputedStyle(p).pointerEvents, z:getComputedStyle(selLayer).zIndex }; };
+        return { visible:!!vis, mode:refMode, game:panelInfo(selPanelGame), ref:panelInfo(selPanelRef) };
+      } },
     guides:{ center:(on)=>setGuideCenter(on), grid:(on)=>setGuideGrid(on),
              centerOn:()=>guideCenterOn, gridOn:()=>guideGridOn,
              readout:()=>selectedDesignBox(),   // 선택요소 디자인 px {x,y,w,h,label}

@@ -126,6 +126,69 @@ body.ed-previewing .ed-guide-layer{ display:none !important; }
 .ed-guide-readout .ed-gr-grid span{ color:#7f94b3; font-size:10px; }
 .ed-guide-readout .ed-gr-grid b{ color:#aef; font-size:13px; font-variant-numeric:tabular-nums; }
 
+/* ─── 참조 매칭 모드 토글(A/B) — 참조 패널 안 세그먼트 버튼 ─── */
+.ed-modeseg{ display:flex; gap:0; margin:6px 0 2px; border:1px solid #2c3a52; border-radius:8px; overflow:hidden; }
+.ed-modeseg .ed-segbtn{ flex:1; padding:7px 6px; background:#1b2330; color:#9fb0c2; border:none;
+  font:700 12px system-ui,sans-serif; cursor:pointer; white-space:nowrap; }
+.ed-modeseg .ed-segbtn.on{ background:#3b73d6; color:#fff; }
+.ed-modeseg .ed-segbtn:not(.on):hover{ background:#243044; }
+
+/* ─── MODE B: 나란히(SIDE-BY-SIDE) ───
+   게임(#fit-root)을 왼쪽 절반으로 transform 이동 → 그 transform 이 fixed 자식(HUD)도 함께 끌고감
+   (transform 건 요소는 자손 position:fixed 의 컨테이닝블록이 됨). 참조는 오른쪽에 같은 스케일·크기로 별도 배치.
+   sbsRefBox 는 JS(sbsTrack)가 게임박스(#game-container)와 동일 픽셀 크기·세로위치로, 오른쪽으로 나란히 둔다. */
+body.ed-sbs #fit-root{ transition:transform .12s ease; }
+.ed-sbs-ref{ position:fixed; z-index:99989; display:none; overflow:hidden; pointer-events:none;
+  background:#0b0f15; border:1px solid #2b3647; border-radius:8px; box-shadow:0 8px 30px #000a; }
+.ed-sbs-ref img{ position:absolute; inset:0; width:100%; height:100%; object-fit:fill; image-rendering:auto; pointer-events:none; }
+/* 참조 패널 비었을 때 안내 */
+.ed-sbs-ref .ed-sbs-empty{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  color:#6b7c8f; font:600 13px system-ui,sans-serif; text-align:center; padding:16px; line-height:1.6; }
+/* '참조' 라벨(게임/참조 구분) */
+.ed-sbs-tag{ position:fixed; z-index:99992; display:none; pointer-events:none;
+  padding:3px 10px; border-radius:0 0 7px 7px; background:#3b73d6cc; color:#fff;
+  font:700 11px system-ui,sans-serif; box-shadow:0 2px 6px #0006; }
+body.ed-previewing .ed-sbs-ref, body.ed-previewing .ed-sbs-tag{ display:none !important; }
+
+/* ─── 대응 가이드선(CORRESPONDENCE) — 선택 요소의 중심 X/Y 를 양쪽 패널 가로질러 표시 ───
+   sbsTrack 이 게임박스+참조박스를 모두 덮는 컨테이너에 left/top/w/h 설정. 선은 디자인px → 화면px 매핑.
+   z 99993: 게임·참조 위, 에디터 크롬(기즈모99998↑) 아래. pointer-events:none → 편집 통과. */
+.ed-corr-layer{ position:fixed; z-index:99993; pointer-events:none; display:none; }
+.ed-corr-line{ position:absolute; pointer-events:none; }
+.ed-corr-line.h{ left:0; width:100%; height:0; transform:translateY(-1px);
+  border-top:2px dashed rgba(0,229,255,.95); box-shadow:0 0 2px rgba(0,0,0,.7); }
+.ed-corr-line.v{ top:0; height:100%; width:0; transform:translateX(-1px);
+  border-left:2px dashed rgba(255,32,170,.95); box-shadow:0 0 2px rgba(0,0,0,.7); }
+/* 선 끝의 px 배지(센터 좌표) */
+.ed-corr-badge{ position:absolute; padding:1px 6px; border-radius:6px; background:#0e131cdd; color:#aef;
+  font:700 11px/1.4 system-ui,sans-serif; transform:translate(6px,6px); white-space:nowrap;
+  box-shadow:0 1px 3px #0008; font-variant-numeric:tabular-nums; }
+body.ed-previewing .ed-corr-layer{ display:none !important; }
+
+/* ─── 선택 표시(SELECTION INDICATOR) — 선택/드래그한 요소의 위치선(크로스헤어) + 크기사각형 ───
+   요소를 선택하면 그 중심에 가로·세로 선을, 그 경계(x/y/w/h)에 사각 테두리를 그린다.
+   Mode A: 게임(디자인박스) 위에. Mode B: 게임패널 + 참조패널 양쪽에 같은 디자인좌표로(미러).
+   자동 대응 없음 — 선택요소의 위치/크기만 시각화, 사용자가 눈으로 맞춘다.
+   각 패널 1세트(crosshair+rect)를 panelEl 로 만들어 selTrack 이 left/top/w/h 설정.
+   z 99992: 게임·참조 위, 에디터 크롬(기즈모99998↑) 아래. pointer-events:none → 편집 통과. */
+.ed-sel-layer{ position:fixed; inset:0; z-index:99992; pointer-events:none; display:none; }
+.ed-sel-panel{ position:absolute; pointer-events:none; }   /* 각 패널 클립영역(게임/참조) */
+.ed-sel-panel .ed-sel-rect{ position:absolute; pointer-events:none; box-sizing:border-box;
+  border:2px solid rgba(255,213,106,.95); border-radius:2px;
+  box-shadow:0 0 0 1px rgba(0,0,0,.55), 0 0 6px rgba(255,213,106,.45); }
+/* 크로스헤어: 패널 전체를 가로지르되 중심선만(요소 중심 X/Y). 패널로 clip(overflow:hidden). */
+.ed-sel-panel{ overflow:hidden; }
+.ed-sel-panel .ed-sel-cross{ position:absolute; pointer-events:none; }
+.ed-sel-panel .ed-sel-cross.h{ left:0; width:100%; height:0; transform:translateY(-1px);
+  border-top:1.5px dashed rgba(0,229,255,.9); }
+.ed-sel-panel .ed-sel-cross.v{ top:0; height:100%; width:0; transform:translateX(-1px);
+  border-left:1.5px dashed rgba(255,32,170,.9); }
+/* 크기 배지(W×H, 사각형 좌상단) */
+.ed-sel-panel .ed-sel-size{ position:absolute; padding:1px 5px; border-radius:5px; background:#0e131cdd;
+  color:#ffd56a; font:700 10px/1.35 system-ui,sans-serif; white-space:nowrap; transform:translateY(-100%);
+  box-shadow:0 1px 3px #0008; font-variant-numeric:tabular-nums; }
+body.ed-previewing .ed-sel-layer{ display:none !important; }
+
 /* ─── 디바이스 미리보기(?res=WxH) — 기기 베젤 + 어두운 백드롭 ───
    게임 JS(updateViewportScale)가 #fit-root 를 기기 dims 박스로 만들고 .device-frame/.device-mode 를 토글.
    여기선 룩(딤·베젤·라운드)만 입힌다. 배포본엔 editor.css 가 없으니 영향 0. */
