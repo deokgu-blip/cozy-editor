@@ -1,0 +1,82 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">  <!-- 빈 파비콘: 브라우저 favicon.ico 자동요청 404 방지 -->
+<title>Cube Blast — 리소스 에디터</title>
+<style>
+  html,body{margin:0;height:100%;font-family:'Apple SD Gothic Neo',-apple-system,sans-serif;background:#1d242e;overflow:hidden;}
+  /* 게임 iframe은 화면 전체. 기기 미리보기(?res)면 게임이 스스로 중앙 기기박스로 가둠 → iframe은 항상 풀윈도우(에디터 툴바/슬라이더는 그 안에서 화면 끝에 떠 있음). */
+  #frames{position:absolute;inset:0;}
+  iframe{position:absolute;inset:0;width:100%;height:100%;border:none;display:none;background:#1d242e;}
+  iframe.on{display:block;}
+  #tabs{position:fixed;bottom:14px;right:14px;z-index:2147483646;display:flex;flex-direction:column;gap:6px;
+    background:#11161df2;border:1px solid #2a3340;border-radius:12px;padding:8px;box-shadow:0 6px 20px #0009;}
+  #tabs .row{display:flex;gap:6px;}
+  #tabs button{flex:1;padding:7px 11px;background:#1b2330;border:1px solid #2a3340;color:#9fb0c2;font-size:13px;
+    font-weight:700;cursor:pointer;border-radius:8px;white-space:nowrap;}
+  #tabs button.on{color:#fff;background:#3a86ff;border-color:#5b9bff;}
+  #tabs .hint{color:#6b7c8f;font-size:10px;line-height:1.4;max-width:230px;text-align:center;}
+  /* 기기 해상도 선택기 — 화면 상단 중앙 플로팅(에디터 좌측 툴바 120px / 우측 패널 268px 사이를 안 가림) */
+  #devbar{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:2147483646;
+    display:flex;align-items:center;gap:7px;background:#11161df2;border:1px solid #2a3340;border-radius:10px;
+    padding:6px 10px;box-shadow:0 4px 16px #0009;}
+  #devbar label{color:#7f94b3;font-size:11px;font-weight:700;}
+  #devbar select{background:#1b2330;color:#dfe7f2;border:1px solid #2a3340;border-radius:7px;
+    padding:5px 8px;font-size:12px;font-weight:700;cursor:pointer;}
+  #devbar select:focus{outline:1px solid #3a86ff;}
+</style></head>
+<body>
+<div id="frames">
+  <iframe id="ig" class="on" src="editor.html?stage=1"></iframe>
+  <iframe id="lo" data-src="lobby_editor.html"></iframe>
+</div>
+<div id="devbar">
+  <label>📱 기기</label>
+  <select id="dev">
+    <option value="">전체 화면(기본)</option>
+    <option value="375x667">iPhone SE — 375×667</option>
+    <option value="390x844" selected>iPhone 14 — 390×844</option>
+    <option value="430x932">iPhone 15 Pro Max — 430×932</option>
+    <option value="412x915">Pixel 7 — 412×915</option>
+    <option value="360x800">Galaxy S — 360×800</option>
+    <option value="768x1024">iPad mini — 768×1024</option>
+  </select>
+</div>
+<div id="tabs">
+  <div class="row">
+    <button data-f="ig" class="on">🎮 인게임</button>
+    <button data-f="lo">🏠 로비</button>
+    <button data-f="mk">🏗 제작</button>
+  </div>
+  <div class="hint">인게임/로비/제작(디오라마 만들기) 화면 편집 · 왼쪽 바 ⬇ Export → 디스코드 전송</div>
+</div>
+<script>
+  // 인게임·제작 = 같은 editor.html(게임 1개만 로드). '제작'은 ?making=1 로 다시 띄워 디오라마 제작 화면으로 진입.
+  // 로비 = 별도 iframe(처음 전환 시 lazy-load — WebGL 게임 2개 동시 로드 방지).
+  const tabs=document.querySelectorAll('#tabs button');
+  const ig=document.getElementById('ig'), lo=document.getElementById('lo');
+  const devSel=document.getElementById('dev');
+  let igMode='ingame';
+
+  // 현재 선택 기기 → ?res=WxH 쿼리(없으면 빈문자열). 모든 iframe src 빌드에 공통 적용 → 기기 바꿔도 모드 유지.
+  function resQS(){ const v=devSel.value; return v?('&res='+v):''; }
+  function igSrc(){ return igMode==='making' ? ('editor.html?making=1'+resQS()) : ('editor.html?stage=1'+resQS()); }
+  function loSrc(){ return (lo.dataset.src||'lobby_editor.html') + (resQS()?('?'+resQS().slice(1)):''); }
+
+  function show(which){
+    ig.classList.toggle('on', which==='ig'||which==='mk');
+    lo.classList.toggle('on', which==='lo');
+    if(which==='lo'){ if(!lo.getAttribute('src')) lo.src=loSrc(); }
+    if(which==='mk' && igMode!=='making'){ igMode='making'; ig.src=igSrc(); }
+    if(which==='ig' && igMode!=='ingame'){ igMode='ingame'; ig.src=igSrc(); }
+  }
+  tabs.forEach(b=>b.addEventListener('click',()=>{ tabs.forEach(x=>x.classList.toggle('on',x===b)); show(b.dataset.f); }));
+
+  // 기기 변경 → 보이는 iframe 들을 새 res 로 다시 로드(게임이 res 를 부팅 시 읽음).
+  devSel.addEventListener('change',()=>{
+    ig.src=igSrc();
+    if(lo.getAttribute('src')) lo.src=loSrc();   // 로비를 한 번이라도 열었으면 같이 갱신
+  });
+  // 초기 로드: select 기본값(390x844)을 첫 iframe 에 즉시 반영.
+  ig.src=igSrc();
+</script>
+</body></html>

@@ -1,0 +1,64 @@
+{
+ "config": {
+  "BULLET_SPEED": 40,
+  "FIRE_INTERVAL": 0.05
+ },
+ "octo": {
+  "yOff": -1.55,
+  "dist": 13.003885424585281,
+  "scale": 0.6,
+  "tiltX": 0.18,
+  "faceY": 3.141592653589793
+ },
+ "queue": {
+  "scale": 0.57,
+  "colGap": 0.78,
+  "rowGap": 0.6,
+  "baseY": -1.7
+ },
+ "puffMax": 0.1,
+ "slotRow": {
+  "y": 57
+ },
+ "ui": {
+  "preview-strip": {
+   "dy": 12
+  },
+  "coin-pill": {
+   "dy": 10,
+   "scale": 0.83,
+   "dx": -17
+  },
+  "coin-bg": {
+   "scale": 0.77,
+   "dx": 4
+  },
+  "powerups": {
+   "dy": -19,
+   "scale": 1,
+   "dx": 1,
+   "h": 84
+  },
+  "coin-amount": {
+   "dx": -3
+  },
+  "level-label": {
+   "dy": 10,
+   "dx": -43,
+   "scale": 0.83
+  },
+  "settings-btn": {
+   "dy": 1,
+   "scale": 0.71
+  },
+  "make-label": {
+   "dy": -21
+  },
+  "make-next": {
+   "hidden": true
+  },
+  "make-home": {
+   "hidden": true
+  }
+ }
+}
