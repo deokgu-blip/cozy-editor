@@ -211,7 +211,7 @@
       if (e.value){ before=captureSel(); API.config.AUTO_ROTATE=false; }
       else if (before){ commitSelUndo(before); before=null; }
     });
-    tc.addEventListener('objectChange', ()=> writeBackSel());
+    tc.addEventListener('objectChange', ()=>{ writeBackSel(); try{ guideReadoutPoke(); }catch(e){} });
     return tc;
   }
   function selectSlot(i){ const s=API.slots[i]; if(!s||!s.octo){ try{API.deployAll();}catch(e){} } const s2=API.slots[i]; if(s2&&s2.octo) attach(s2.octo,'slot',i); }
@@ -221,6 +221,7 @@
     sel={obj, kind, index}; tc.attach(obj);
     if (mode==='select') setMode('translate'); else tc.setMode(gmode());
     flash('선택: '+kind+(index>=0?(' '+index):''));
+    try{ guideReadoutPoke(); }catch(e){}
   }
   function gmode(){ return mode==='select'?'translate':mode; }
   function writeBackSel(){
@@ -533,6 +534,7 @@
     uiOutline.style.width=Math.max(10,r.width)+'px'; uiOutline.style.height=Math.max(10,r.height)+'px';
     const o=uiObj(uiSel.id);
     uiOutline.style.transform = o.rot ? ('rotate('+o.rot+'deg)') : '';
+    try{ guideReadoutPoke(); }catch(e){}   // 이동/크기/회전 드래그마다 px 읽기 갱신
   }
   function uiPushUndo(id){ const o=uiObj(id); undoStack.push({kind:'uiSnap', sel:id, before:{dx:o.dx||0,dy:o.dy||0,w:o.w||0,h:o.h||0,scale:o.scale||1,rot:o.rot||0,font:o.font||0,asset:o.asset||null}}); if(undoStack.length>UNDO_MAX)undoStack.shift(); redoStack.length=0; updateUndoLabel(); }
 
@@ -900,6 +902,22 @@
     if(refImg){ refImg.src=''; refImg.style.display='none'; }
     buildRefPanel(); flash('참조 이미지 제거됨');
   }
+  // 가이드 컨트롤(중앙선/그리드 토글 + px 읽기)을 참조 패널에 함께 그린다 → 오버레이 옆에서 발견성↑.
+  function buildGuideSection(){
+    refPanel.appendChild(el('div','ed-sec','📐 가이드'));
+    const row=el('div','ed-row');
+    const cb=el('span','ed-uibtn', guideCenterOn?'✚ 중앙선 ON':'✚ 중앙선');
+    if(guideCenterOn) cb.classList.add('on');
+    cb.onclick=()=>{ setGuideCenter(!guideCenterOn); };
+    const gb=el('span','ed-uibtn', guideGridOn?'▦ 그리드 ON':'▦ 그리드');
+    if(guideGridOn) gb.classList.add('on');
+    gb.onclick=()=>{ setGuideGrid(!guideGridOn); };
+    row.appendChild(cb); row.appendChild(gb); refPanel.appendChild(row);
+    // 선택요소 px 읽기 — RAF/선택 변화 시 갱신. 패널 열려있을 때만 표시(닫히면 비용 0).
+    refPanel.appendChild(guideHUDEnsure());
+    updateGuideHUD();
+    refPanel.appendChild(el('div','ed-tip','중앙선·그리드는 게임 디자인공간(390×844) 박스에 맞춰 표시됩니다(클릭 통과). 요소(코인·레벨·설정·파워업 등)를 선택하면 위치/크기를 px로 읽어 참조와 1:1로 맞출 수 있습니다.'));
+  }
   function buildRefPanel(){
     if(!refPanel){ refPanel=el('div','ed-refpanel'); document.body.appendChild(refPanel); }
     refPanel.innerHTML='';
@@ -916,6 +934,7 @@
       dz.addEventListener('drop', e=>{ e.preventDefault(); dz.classList.remove('over'); if(e.dataTransfer.files[0]) loadRefFile(e.dataTransfer.files[0]); });
       refPanel.appendChild(dz);
       refPanel.appendChild(el('div','ed-tip','타깃 화면 스크린샷을 올리면 게임 위에 반투명으로 겹쳐서 보여줍니다. 우리 UI를 드래그/슬라이더로 그 위치에 맞추세요.'));
+      buildGuideSection();   // 참조 미로드 상태에서도 가이드는 사용 가능
       return;
     }
     // 미리보기 썸네일 + 교체/제거
@@ -934,6 +953,7 @@
     const cl=el('span','ed-uibtn','🗑 제거'); cl.onclick=()=>clearRef();
     tr.appendChild(tb); tr.appendChild(rep); tr.appendChild(cl); refPanel.appendChild(tr);
     refPanel.appendChild(el('div','ed-tip','오버레이는 클릭이 통과(pointer-events:none)되어 밑의 게임 UI·3D를 그대로 편집할 수 있습니다. 기기(📱) 선택 시 기기박스에 맞춰 정렬됩니다.'));
+    buildGuideSection();
   }
   function toggleRefPanel(){
     if(!refPanel){ buildRefPanel(); }
@@ -945,6 +965,124 @@
   }
   window.addEventListener('resize', ()=>{ if(refLoaded&&refVisible) scheduleRefTrack(); });
   if (window.visualViewport){ window.visualViewport.addEventListener('resize', ()=>{ if(refLoaded&&refVisible) scheduleRefTrack(); }); }
+
+  // ========== 디자인 가이드 (GUIDES) — 중앙선 + 그리드 + 선택요소 px 읽기 (디자인툴 감각) ==========
+  //  - 100% 클라이언트(DOM/RAF) → 정적/공개 배포에서도 서버 없이 동작. 참조 오버레이와 공존.
+  //  - 게임 디자인공간 박스(#game-container, 390×844 가 --game-scale 로 스케일된 화면 rect)에 정렬.
+  //    참조 오버레이는 #fit-root(기기박스)에 맞추지만, 가이드/읽기는 실제 디자인공간 박스(390×844)에
+  //    맞춰야 px 가 정확 → gameBoxRect() 별도 사용. 둘 다 RAF 로 추적(리사이즈/기기변경/늦은 fit 정착 대응).
+  //  - pointer-events:none → 밑 게임/UI 편집을 그대로. z 99991~99992: 참조(99990) 위, 에디터 크롬(99998↑) 아래.
+  let guideLayer=null, guideV=null, guideH=null, guideGridOn=false, guideCenterOn=false, guideRAF=0, guideHUD=null;
+  // 디자인공간(390×844) 박스의 화면 rect. #game-container 가 transform:scale 로 그려진 실제 픽셀 박스.
+  function gameBoxRect(){
+    const gc=document.getElementById('game-container');
+    if (gc){ const r=gc.getBoundingClientRect(); if(r.width>4&&r.height>4) return r; }
+    return fitRootRect();   // 폴백
+  }
+  function ensureGuideLayer(){
+    if (guideLayer) return guideLayer;
+    guideLayer=el('div','ed-guide-layer');           // 박스에 맞춰 위치/크기 잡는 컨테이너(pointer-events:none)
+    guideV=el('div','ed-guide-line v');               // 세로 중앙선
+    guideH=el('div','ed-guide-line h');               // 가로 중앙선
+    guideLayer.appendChild(guideV); guideLayer.appendChild(guideH);
+    document.body.appendChild(guideLayer);
+    return guideLayer;
+  }
+  function guideActive(){ return guideCenterOn || guideGridOn; }
+  // 그리드를 디자인공간 px(GRID_DESIGN) 간격으로 그린다 → 화면에선 scale 곱해 표시(반복 배경).
+  const GRID_DESIGN = 10;
+  function applyGuideGridBg(scale){
+    if(!guideLayer) return;
+    if (guideGridOn){
+      const step=(GRID_DESIGN*scale);
+      const major=step*5;   // 50디자인px 굵은 선
+      guideLayer.style.backgroundImage =
+        'linear-gradient(to right, rgba(0,255,255,.18) 1px, transparent 1px),'+
+        'linear-gradient(to bottom, rgba(0,255,255,.18) 1px, transparent 1px),'+
+        'linear-gradient(to right, rgba(0,255,255,.34) 1px, transparent 1px),'+
+        'linear-gradient(to bottom, rgba(0,255,255,.34) 1px, transparent 1px)';
+      guideLayer.style.backgroundSize = step+'px '+step+'px, '+step+'px '+step+'px, '+major+'px '+major+'px, '+major+'px '+major+'px';
+      guideLayer.style.backgroundPosition='0 0';
+    } else {
+      guideLayer.style.backgroundImage='none';
+    }
+  }
+  function guideTrack(){
+    guideRAF=0;
+    if (!guideActive()){ if(guideLayer) guideLayer.style.display='none'; return; }
+    ensureGuideLayer();
+    const r=gameBoxRect();
+    guideLayer.style.display='block';
+    guideLayer.style.left=r.left+'px'; guideLayer.style.top=r.top+'px';
+    guideLayer.style.width=r.width+'px'; guideLayer.style.height=r.height+'px';
+    guideV.style.display = guideCenterOn ? 'block' : 'none';
+    guideH.style.display = guideCenterOn ? 'block' : 'none';
+    applyGuideGridBg(gameScale());
+    scheduleGuide();   // fit 이 늦게 정착하므로 켜있는 동안 가볍게 추적
+    updateGuideHUD();
+  }
+  function scheduleGuide(){ if(!guideRAF && guideActive()) guideRAF=requestAnimationFrame(guideTrack); }
+  function setGuideCenter(on){ guideCenterOn=!!on; if(guideActive()){ ensureGuideLayer(); scheduleGuide(); } else if(guideLayer){ guideLayer.style.display='none'; } if(refPanel&&refPanel.style.display!=='none') buildRefPanel(); }
+  function setGuideGrid(on){ guideGridOn=!!on; if(guideActive()){ ensureGuideLayer(); scheduleGuide(); } else if(guideLayer){ guideLayer.style.display='none'; } if(refPanel&&refPanel.style.display!=='none') buildRefPanel(); }
+
+  // ---- 선택 요소 px 읽기(디자인공간 390×844 기준) ----
+  //  DOM UI 요소: getBoundingClientRect() 를 게임박스 원점·gameScale 로 역매핑 → 디자인 px.
+  //  3D(model/슬롯/큐): 화면 bbox 를 디자인 px 로 환산(보너스). 둘 다 없으면 '—'.
+  function guideHUDEnsure(){
+    if (guideHUD) return guideHUD;
+    guideHUD=el('div','ed-guide-readout'); guideHUD.textContent='—';
+    return guideHUD;
+  }
+  // 선택된 것의 디자인공간 px {x,y,w,h,label}. UI편집 우선(uiSel), 그다음 3D 기즈모(sel).
+  //  기준 원점은 #fit-root(=화면/기기 박스) 좌상단, 스케일은 --game-scale(디자인→화면 px).
+  //  이유: HUD·설정·파워업 등은 #fit-root 직속(화면 끝 고정, 미스케일), 슬롯/큐는 #game-container(스케일) 안.
+  //  둘을 같은 디자인 px 로 읽으려면 화면 박스(fit-root) 기준·gameScale 나눗셈이 일관적이고 참조 측정과 맞음.
+  function selectedDesignBox(){
+    const box=fitRootRect(), s=gameScale()||1;
+    const toDesign=(r)=>({ x:Math.round((r.left-box.left)/s), y:Math.round((r.top-box.top)/s),
+                           w:Math.round(r.width/s), h:Math.round(r.height/s) });
+    // 1) 2D UI 편집 선택
+    if (uiMode && uiSel && uiSel.id && uiSel.id[0]!=='@'){
+      const e2=elById(uiSel.id); if(e2){ const d=toDesign(e2.getBoundingClientRect()); const m=UI_META[uiSel.id]||{}; return {...d, label:(m.label||uiSel.id)}; }
+    }
+    // 2) 3D 기즈모 선택(model/slot/queue) — 화면 bbox 투영
+    if (sel && sel.obj){
+      try{
+        const r=projectObjScreenRect(sel.obj);
+        if(r){ const d=toDesign(r); return {...d, label:(sel.kind+(sel.index>=0?(' '+sel.index):'')), is3d:true}; }
+      }catch(e){}
+    }
+    return null;
+  }
+  // 3D 오브젝트의 화면 bbox(클라이언트 px). Box3 → 8코너 투영 → 화면 min/max.
+  const _gb3=new THREE.Box3(), _gv3=new THREE.Vector3();
+  function projectObjScreenRect(obj){
+    _gb3.setFromObject(obj); if(!isFinite(_gb3.min.x)) return null;
+    const cr=API.canvas.getBoundingClientRect(); let mnx=1e9,mny=1e9,mxx=-1e9,mxy=-1e9;
+    const corners=[[0,0,0],[1,0,0],[0,1,0],[1,1,0],[0,0,1],[1,0,1],[0,1,1],[1,1,1]];
+    for(const c of corners){
+      _gv3.set(c[0]?_gb3.max.x:_gb3.min.x, c[1]?_gb3.max.y:_gb3.min.y, c[2]?_gb3.max.z:_gb3.min.z);
+      _gv3.project(API.viewCam);
+      const sx=cr.left+(_gv3.x*0.5+0.5)*cr.width, sy=cr.top+(-_gv3.y*0.5+0.5)*cr.height;
+      mnx=Math.min(mnx,sx); mny=Math.min(mny,sy); mxx=Math.max(mxx,sx); mxy=Math.max(mxy,sy);
+    }
+    return {left:mnx, top:mny, width:mxx-mnx, height:mxy-mny};
+  }
+  function updateGuideHUD(){
+    if(!guideHUD) return;
+    const b=selectedDesignBox();
+    if(!b){ guideHUD.innerHTML='<span class="ed-gr-dim">요소를 선택하면 px 표시</span>'; return; }
+    guideHUD.innerHTML='<b>'+(b.label||'')+'</b>'+(b.is3d?' <span class="ed-gr-dim">(3D 투영)</span>':'')+
+      '<div class="ed-gr-grid"><span>X</span><b>'+b.x+'</b><span>Y</span><b>'+b.y+'</b>'+
+      '<span>W</span><b>'+b.w+'</b><span>H</span><b>'+b.h+'</b></div>'+
+      '<div class="ed-gr-dim">디자인공간 390×844 px</div>';
+  }
+  // 선택/드래그 변할 때 읽기 갱신 — 가이드가 켜져있으면 RAF 가 매 프레임 갱신하지만,
+  // 꺼져있어도 패널이 열려있으면 즉시 갱신되도록 외부 훅에서 호출.
+  function guideReadoutPoke(){ if(refPanel&&refPanel.style.display!=='none'&&guideHUD) updateGuideHUD(); }
+  window.addEventListener('resize', ()=>{ if(guideActive()) scheduleGuide(); });
+  if (window.visualViewport){ window.visualViewport.addEventListener('resize', ()=>{ if(guideActive()) scheduleGuide(); }); }
+  // .ed-previewing 시 가이드 숨김은 CSS(.ed-guide-layer)가 처리.
 
   // ---- boot editor ----
   buildUI();
@@ -971,6 +1109,11 @@
           clear:clearRef, loaded:()=>refLoaded, visible:()=>refVisible, opacityVal:()=>refOpacity,
           rect:()=>{ if(!refImg) return null; const r=refImg.getBoundingClientRect(); return {left:r.left,top:r.top,width:r.width,height:r.height,pe:getComputedStyle(refImg).pointerEvents,z:getComputedStyle(refImg).zIndex,opacity:getComputedStyle(refImg).opacity,display:getComputedStyle(refImg).display}; },
           fitRect:()=>{ const r=fitRootRect(); return {left:r.left,top:r.top,width:r.width,height:r.height}; } },
+    guides:{ center:(on)=>setGuideCenter(on), grid:(on)=>setGuideGrid(on),
+             centerOn:()=>guideCenterOn, gridOn:()=>guideGridOn,
+             readout:()=>selectedDesignBox(),   // 선택요소 디자인 px {x,y,w,h,label}
+             layerRect:()=>{ if(!guideLayer) return null; const r=guideLayer.getBoundingClientRect(); return {left:r.left,top:r.top,width:r.width,height:r.height,pe:getComputedStyle(guideLayer).pointerEvents,z:getComputedStyle(guideLayer).zIndex,display:getComputedStyle(guideLayer).display}; },
+             gameBox:()=>{ const r=gameBoxRect(); return {left:r.left,top:r.top,width:r.width,height:r.height}; } },
     ui:{ toggle:toggleUIMode, mode:()=>uiMode, list:()=>Object.keys(UI_META), sel:()=>uiSel&&uiSel.id,
          select:(id)=>selectUI(UI_META[id]||UI_TREE[0].items[0]),
          set:(id,k,v)=>{ uiPushUndo(id); uiObj(id)[k]=v; applyUI(id); uiOutlineUpdate(); syncUIBar(); buildTreeDots&&buildTreeDots(); },
