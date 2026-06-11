@@ -6,19 +6,21 @@
  "octo": {
   "yOff": -1.55,
   "dist": 13.003885424585281,
-  "scale": 0.6,
+  "scale": 0.86,
   "tiltX": 0.18,
   "faceY": 3.141592653589793
  },
  "queue": {
-  "scale": 0.57,
-  "colGap": 0.78,
-  "rowGap": 0.6,
-  "baseY": -1.7
+  "scale": 0.82,
+  "cols": 3,
+  "rowsPer": 3,
+  "colGap": 1.04,
+  "rowGap": 0.82,
+  "baseY": -2.62
  },
  "puffMax": 0.1,
  "slotRow": {
-  "y": 57
+  "y": -30
  },
  "ui": {
   "preview-strip": {
