@@ -194,11 +194,12 @@
     buildModelSlider(panel, '모델 높이',     'offY',     -6,  6,   0.05, 0);
     panel.appendChild(el('div','ed-tip','"모델 전체 크기"=모델 통째 배율 · "모델 높이"=위/아래 위치. (복셀 1개 크기는 위 "일반 › 복셀 크기")'));
 
-    // ── 슬롯 크기 (상시 노출) — slotRow.slotScale[i]. 슬롯0/1/2 버튼으로 대상 선택 후 슬라이더. 슬롯 클릭 불필요. ──
+    // ── 슬롯 크기 (상시 노출) — slotRow.slotScale[i]. 슬롯0~(SLOTS-1) 버튼으로 대상 선택 후 슬라이더. 슬롯 클릭 불필요. ──
+    //   버튼은 활성 슬롯 수(API.SLOTS, 기본 5)만큼 동적 생성 — 하드코딩 3 제거.
     panel.appendChild(el('div','ed-sec','슬롯 크기 (개별 슬롯)'));
     const ssWrap=el('div','ed-slotsize'); window.__edSlotSize=ssWrap;
-    const ssPick=el('div','ed-row'); ssPick.appendChild(el('label','ed-lbl','슬롯 선택'));
-    ['슬롯0','슬롯1','슬롯2'].forEach((l,i)=>{ const b=el('button','ed-btn',l); b.dataset.slotpick=i; b.style.flex='1'; b.onclick=()=>setSlotSizeTarget(i); ssPick.appendChild(b); });
+    const ssPick=el('div','ed-row'); ssPick.style.flexWrap='wrap'; ssPick.appendChild(el('label','ed-lbl','슬롯 선택'));
+    for(let i=0;i<slotCount();i++){ const b=el('button','ed-btn','슬롯'+i); b.dataset.slotpick=i; b.style.flex='1'; b.style.minWidth='44px'; b.onclick=()=>setSlotSizeTarget(i); ssPick.appendChild(b); }
     ssWrap.appendChild(ssPick);
     const ssRow=el('div','ed-row'); ssRow.appendChild(el('label','ed-lbl','이 슬롯 크기'));
     const ssS=el('input','ed-range'); ssS.type='range'; ssS.min=0.3; ssS.max=2.0; ssS.step=0.01;
@@ -213,14 +214,15 @@
     ssN.addEventListener('input', ()=>ssApply(ssN.value));
     ssN.addEventListener('change', ()=>{ if(ssDragFrom!=null&&slotSizeIdx>=0){ pushSlotScaleUndo(slotSizeIdx, ssDragFrom, +ssN.value); ssDragFrom=null; } });
     ssRow.appendChild(ssS); ssRow.appendChild(ssN); ssWrap.appendChild(ssRow);
-    ssWrap.appendChild(el('div','ed-tip','슬롯0/1/2 선택 후 슬라이더로 그 슬롯만 크기 조절. 1=공통 크기. (전체 크기는 위 "슬롯 문어 › 크기")'));
+    ssWrap.appendChild(el('div','ed-tip','슬롯 버튼 선택 후 슬라이더로 그 슬롯만 크기 조절. 1=공통 크기. (전체 크기는 위 "슬롯 문어 › 크기")'));
     window.__edSlotSizeEls={ s:ssS, n:ssN };
     panel.appendChild(ssWrap);
 
     const sec=el('div','ed-sec','기즈모 선택 (캔버스 클릭 또는 버튼)');
     panel.appendChild(sec);
-    const selRow=el('div','ed-row');
-    ['슬롯0','슬롯1','슬롯2','모델'].forEach((l,i)=>{ const b=el('button','ed-btn',l); b.dataset.selbtn=l; b.onclick=()=>{ if(l==='모델') selectModel(); else selectSlot(i); }; selRow.appendChild(b); });
+    const selRow=el('div','ed-row'); selRow.style.flexWrap='wrap';
+    const selLabels=[]; for(let i=0;i<slotCount();i++) selLabels.push('슬롯'+i); selLabels.push('모델');
+    selLabels.forEach((l)=>{ const b=el('button','ed-btn',l); b.dataset.selbtn=l; b.style.minWidth='44px'; b.onclick=()=>{ if(l==='모델') selectModel(); else selectSlot(+l.replace('슬롯','')); }; selRow.appendChild(b); });
     panel.appendChild(selRow);
     const tip=el('div','ed-tip','Q 선택 · W 이동 · E 크기 · R 각도 · 축 핸들만 드래그 · Cmd/Ctrl+Z 되돌리기');
     panel.appendChild(tip);
@@ -273,7 +275,9 @@
 
   // ---- 개별 슬롯 크기(slotRow.slotScale[i]) ----
   let slotSizeIdx=0;   // 상시 노출 → 기본 대상=슬롯0(슬롯 클릭 없이도 슬라이더 동작)
-  function ensureSlotScaleArr(){ const sr=API.slotRow; if(!sr) return null; if(!Array.isArray(sr.slotScale)) sr.slotScale=[1,1,1]; while(sr.slotScale.length<API.slots.length) sr.slotScale.push(1); return sr.slotScale; }
+  // 활성 슬롯 수: 엔진이 노출한 API.SLOTS(ACTIVE_SLOTS) 우선, 없으면 slots 배열 길이, 그래도 없으면 5.
+  function slotCount(){ const n=(API && typeof API.SLOTS==='number')?API.SLOTS:((API&&API.slots)?API.slots.length:5); return (n>0)?n:5; }
+  function ensureSlotScaleArr(){ const sr=API.slotRow; if(!sr) return null; if(!Array.isArray(sr.slotScale)) sr.slotScale=new Array(slotCount()).fill(1); while(sr.slotScale.length<slotCount()) sr.slotScale.push(1); return sr.slotScale; }
   function getSlotScale(i){ const a=ensureSlotScaleArr(); return (a&&a[i]!=null)?+a[i]:1; }
   function setSlotScale(i, v, opts){
     const a=ensureSlotScaleArr(); if(!a||i<0) return;
