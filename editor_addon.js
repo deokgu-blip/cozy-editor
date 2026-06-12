@@ -537,8 +537,13 @@
     {grp:'레벨/상단', items:[
       {id:'hud-top',     label:'상단바 전체'},
       {id:'level-label', label:'· 레벨칩', font:true, img:true},
+      {id:'stage-prev',  label:'· 레벨◀ 화살표(테스트)', font:true},
+      {id:'stage-next',  label:'· 레벨▶ 화살표(테스트)', font:true},
       {id:'settings-btn',label:'설정(기어) 버튼', img:true},
       {id:'preview-strip',label:'이모지 미리보기줄'},
+    ]},
+    {grp:'테스트(개발용)', items:[
+      {id:'test-toggle', label:'테스트모드 토글(설정창 안)'},
     ]},
     {grp:'슬롯/큐(2D 컨테이너)', items:[
       {id:'slots-row',   label:'슬롯 줄'},
@@ -609,6 +614,11 @@
   function uiObj(id){ cfg.ui=cfg.ui||{}; return (cfg.ui[id]=cfg.ui[id]||{}); }
   function hasOv(o){ return o && (o.dx||o.dy||o.w||o.h||(o.scale&&o.scale!==1)||o.rot||o.font||o.asset||o.hidden); }
 
+  // 베이스 transform(센터링 등) 보존 맵 — 이 id 들은 CSS 가 transform:translateX(-50%) 로 중앙정렬한다.
+  //   applyUI 가 transform 을 통째로 덮어쓰면 -50% 가 사라져 요소가 우측으로 ~절반폭 튄다(L12).
+  //   → 오버라이드 transform 앞에 베이스를 prepend 해 센터링을 유지(release bake 도 동일하게).
+  //   (level-label 은 사용자 튜닝 dx 가 이미 -50% 소실을 보정하고 있어 제외 — 추가하면 이중적용으로 튐.)
+  const UI_BASE_TF = { 'stage-prev':'translateX(-50%)', 'stage-next':'translateX(-50%)' };
   // ---- 적용: transform(이동/크기/회전) + 폰트 + 이미지 교체 ----
   function applyUI(id){
     const o=uiObj(id), meta=UI_META[id]||{};
@@ -620,14 +630,19 @@
       return;
     }
     const els=document.querySelectorAll('[data-edit-id="'+id+'"]'); if(!els.length) return;
+    const baseTf=UI_BASE_TF[id]||'';
     els.forEach(el2=>{
-      el2.style.display = o.hidden ? 'none' : '';      // 숨김(삭제) — 게임/로비에서도 동일 적용
+      // 숨김(삭제): 우리가 숨긴 것만 되돌린다. inline display 를 무조건 ''로 비우면 JS가 켠
+      //   display:flex(예: 테스트모드 stage-nav)를 지워 CSS 기본 display:none 으로 사라진다(회귀).
+      if (o.hidden){ el2.style.display='none'; el2.dataset.edHidden='1'; }
+      else if (el2.dataset.edHidden){ el2.style.display=''; delete el2.dataset.edHidden; }
       const parts=[];
+      if (baseTf) parts.push(baseTf);
       if (o.dx||o.dy) parts.push('translate('+(o.dx||0)+'px,'+(o.dy||0)+'px)');
       if (o.rot) parts.push('rotate('+o.rot+'deg)');
       if (o.scale && o.scale!==1) parts.push('scale('+o.scale+')');
       el2.style.transform = parts.length ? parts.join(' ') : '';
-      if (parts.length) el2.style.transformOrigin='center center';
+      if (parts.length && !baseTf) el2.style.transformOrigin='center center';
       el2.style.width  = o.w ? (o.w+'px') : '';
       el2.style.height = o.h ? (o.h+'px') : '';
       if (o.font) el2.style.fontSize=o.font+'px'; else if (o.font===0 && el2.style.fontSize) el2.style.fontSize='';
@@ -728,6 +743,10 @@
     // 디오라마 제작 화면 요소를 고르면 제작화면을 띄워야 보이고 조절 가능 → 진입/이탈 자동 전환.
     try{ if (item && /^make-/.test(item.id)){ if(API.enterMakingPreview) API.enterMakingPreview(); }
          else { if(API.exitMakingPreview) API.exitMakingPreview(); } }catch(e){}
+    // 테스트모드 토글은 설정창(#settings-overlay) 안에 있으므로, 선택 시 설정창을 열어 보이게/조절가능하게.
+    //   다른 요소를 고르면 설정창은 닫는다(편집 시야 방해 방지). 노출조건(평소 숨김)은 그대로 유지.
+    try{ const so=document.getElementById('settings-overlay');
+         if(so){ if(item && item.id==='test-toggle') so.classList.add('show'); else so.classList.remove('show'); } }catch(e){}
     ensureUIOutline(); uiOutlineUpdate(); buildUIBar(); refreshTreeSel();
   }
   function refreshTreeSel(){ if(!uiTreeWrap)return; uiTreeWrap.querySelectorAll('.ed-tree-item').forEach(b=>b.classList.toggle('on', uiSel&&b.dataset.id===uiSel.id)); }
@@ -1534,11 +1553,14 @@
              readout:()=>selectedDesignBox(),   // 선택요소 디자인 px {x,y,w,h,label}
              layerRect:()=>{ if(!guideLayer) return null; const r=guideLayer.getBoundingClientRect(); return {left:r.left,top:r.top,width:r.width,height:r.height,pe:getComputedStyle(guideLayer).pointerEvents,z:getComputedStyle(guideLayer).zIndex,display:getComputedStyle(guideLayer).display}; },
              gameBox:()=>{ const r=gameBoxRect(); return {left:r.left,top:r.top,width:r.width,height:r.height}; } },
-    ui:{ toggle:toggleUIMode, mode:()=>uiMode, list:()=>Object.keys(UI_META), sel:()=>uiSel&&uiSel.id,
-         select:(id)=>selectUI(UI_META[id]||UI_TREE[0].items[0]),
-         set:(id,k,v)=>{ uiPushUndo(id); uiObj(id)[k]=v; applyUI(id); uiOutlineUpdate(); syncUIBar(); buildTreeDots&&buildTreeDots(); },
+    ui:{ toggle:toggleUIMode, on:()=>uiMode, mode:()=>uiMode, list:()=>Object.keys(UI_META), sel:()=>uiSel&&uiSel.id,
+         select:(id)=>{ if(!uiMode) toggleUIMode(); selectUI(UI_META[id]||UI_TREE[0].items[0]); return uiSel&&uiSel.id; },
+         set:(id,k,v)=>{ if(!uiMode) toggleUIMode(); if(!uiSel||uiSel.id!==id) selectUI(UI_META[id]||UI_TREE[0].items[0]); uiPushUndo(id); uiObj(id)[k]=+v; applyUI(id); uiOutlineUpdate(); syncUIBar(); buildTreeDots&&buildTreeDots(); return {...uiObj(id)}; },
          setAsset:(id,uri)=>{ uiPushUndo(id); uiObj(id).asset=uri; applyUI(id); if(uiMode)buildUIBar(); },
-         get:(id)=>({...uiObj(id)}) },
+         get:(id)=>({...uiObj(id)}),
+         // 헤드리스 검증용: 요소 화면 박스 + 적용 transform(베이스 센터링 prepend 확인).
+         rect:(id)=>{ const e=elById(id); if(!e) return null; const r=e.getBoundingClientRect(); const cs=getComputedStyle(e);
+                      return {left:+r.left.toFixed(1),top:+r.top.toFixed(1),width:+r.width.toFixed(1),height:+r.height.toFixed(1),display:cs.display,transform:e.style.transform||cs.transform}; } },
     // 큐 검증용(요구1 z순서 + 요구2 회전각): setVal 로 큐 파라미터를 바꾸고(=라이브 rebuild) 각 큐 옥토의
     //   row/renderOrder/회전/depthTest/화면중심Y 를 읽는다. screen Y 는 viewCam 투영 → '위 행이 화면 위쪽인지' 판정.
     queue:{ vals:()=>({...API.queue}),
