@@ -188,34 +188,48 @@
         panel.appendChild(row);
       });
     });
-    const sec=el('div','ed-sec','선택(기즈모: 캔버스 클릭 또는 버튼)');
-    panel.appendChild(sec);
-    const selRow=el('div','ed-row');
-    ['슬롯0','슬롯1','슬롯2','모델'].forEach((l,i)=>{ const b=el('button','ed-btn',l); b.dataset.selbtn=l; b.onclick=()=>{ if(l==='모델') selectModel(); else selectSlot(i); }; selRow.appendChild(b); });
-    panel.appendChild(selRow);
-    // ── 개별 슬롯 크기(선택된 슬롯만) — slotRow.slotScale[i]. 슬롯 선택 시에만 보임. ──
-    const ssWrap=el('div','ed-slotsize'); ssWrap.style.display='none'; window.__edSlotSize=ssWrap;
+    // ── 모델 크기/높이 (상시 노출) — MODEL_OFFSET.scaleMul(전체 크기) / offY(높이). VOXEL_SIZE(복셀 1개)와 구분. ──
+    panel.appendChild(el('div','ed-sec','모델 크기/높이 (전체 모델)'));
+    buildModelSlider(panel, '모델 전체 크기', 'scaleMul', 0.3, 3.0, 0.02, 1);
+    buildModelSlider(panel, '모델 높이',     'offY',     -6,  6,   0.05, 0);
+    panel.appendChild(el('div','ed-tip','"모델 전체 크기"=모델 통째 배율 · "모델 높이"=위/아래 위치. (복셀 1개 크기는 위 "일반 › 복셀 크기")'));
+
+    // ── 슬롯 크기 (상시 노출) — slotRow.slotScale[i]. 슬롯0/1/2 버튼으로 대상 선택 후 슬라이더. 슬롯 클릭 불필요. ──
+    panel.appendChild(el('div','ed-sec','슬롯 크기 (개별 슬롯)'));
+    const ssWrap=el('div','ed-slotsize'); window.__edSlotSize=ssWrap;
+    const ssPick=el('div','ed-row'); ssPick.appendChild(el('label','ed-lbl','슬롯 선택'));
+    ['슬롯0','슬롯1','슬롯2'].forEach((l,i)=>{ const b=el('button','ed-btn',l); b.dataset.slotpick=i; b.style.flex='1'; b.onclick=()=>setSlotSizeTarget(i); ssPick.appendChild(b); });
+    ssWrap.appendChild(ssPick);
     const ssRow=el('div','ed-row'); ssRow.appendChild(el('label','ed-lbl','이 슬롯 크기'));
     const ssS=el('input','ed-range'); ssS.type='range'; ssS.min=0.3; ssS.max=2.0; ssS.step=0.01;
     const ssN=el('input','ed-num'); ssN.type='number'; ssN.min=0.3; ssN.max=2.0; ssN.step=0.01;
     let ssDragFrom=null;
-    const ssApply=(v)=>{ if(slotSizeIdx<0) return; v=Math.max(0.3,Math.min(2.0,+v)); setSlotScale(slotSizeIdx, v, {live:true}); ssS.value=v; ssN.value=fmt(v); };
+    const ssApply=(v)=>{ if(slotSizeIdx<0) return; v=Math.max(0.3,Math.min(2.0,+v)); setSlotScale(slotSizeIdx, v, {live:true,silent:true}); ssS.value=v; ssN.value=fmt(v); };
     ssS.addEventListener('pointerdown', ()=>{ ssDragFrom=getSlotScale(slotSizeIdx); });
+    ssS.addEventListener('focus', ()=>{ ssDragFrom=getSlotScale(slotSizeIdx); });
     ssS.addEventListener('input', ()=>ssApply(ssS.value));
     ssS.addEventListener('change', ()=>{ if(ssDragFrom!=null&&slotSizeIdx>=0){ pushSlotScaleUndo(slotSizeIdx, ssDragFrom, +ssS.value); ssDragFrom=null; } });
     ssN.addEventListener('focus', ()=>{ ssDragFrom=getSlotScale(slotSizeIdx); });
     ssN.addEventListener('input', ()=>ssApply(ssN.value));
     ssN.addEventListener('change', ()=>{ if(ssDragFrom!=null&&slotSizeIdx>=0){ pushSlotScaleUndo(slotSizeIdx, ssDragFrom, +ssN.value); ssDragFrom=null; } });
     ssRow.appendChild(ssS); ssRow.appendChild(ssN); ssWrap.appendChild(ssRow);
-    ssWrap.appendChild(el('div','ed-tip','선택한 슬롯만 크기 조절(다른 슬롯과 다르게). 1=공통 크기. (전체 크기는 위 "슬롯 문어 › 크기")'));
+    ssWrap.appendChild(el('div','ed-tip','슬롯0/1/2 선택 후 슬라이더로 그 슬롯만 크기 조절. 1=공통 크기. (전체 크기는 위 "슬롯 문어 › 크기")'));
     window.__edSlotSizeEls={ s:ssS, n:ssN };
     panel.appendChild(ssWrap);
+
+    const sec=el('div','ed-sec','기즈모 선택 (캔버스 클릭 또는 버튼)');
+    panel.appendChild(sec);
+    const selRow=el('div','ed-row');
+    ['슬롯0','슬롯1','슬롯2','모델'].forEach((l,i)=>{ const b=el('button','ed-btn',l); b.dataset.selbtn=l; b.onclick=()=>{ if(l==='모델') selectModel(); else selectSlot(i); }; selRow.appendChild(b); });
+    panel.appendChild(selRow);
     const tip=el('div','ed-tip','Q 선택 · W 이동 · E 크기 · R 각도 · 축 핸들만 드래그 · Cmd/Ctrl+Z 되돌리기');
     panel.appendChild(tip);
     document.body.appendChild(panel);
     window.__edPanel=panel;
     updateStageLabel();
     setMode('select');
+    setSlotSizeTarget(0);   // 슬롯 크기 섹션 상시 노출: 기본 대상=슬롯0(픽 버튼 하이라이트+슬라이더 동기화)
+    syncModelSliders();     // 모델 크기/높이 슬라이더 현재값 반영
   }
   function fmt(v){ v=+v; return (Math.abs(v)>=100||Number.isInteger(v))? String(v) : v.toFixed(2); }
   function syncSlider(path, val){ const e=sliderEls[path]; if(e){ e.s.value=val; e.num.value=fmt(val); } }
@@ -252,13 +266,13 @@
     } else modelBase=null;
     if (mode==='select') setMode('translate'); else tc.setMode(gmode());
     flash('선택: '+(kind==='model'?'모델':kind)+(index>=0?(' '+index):''));
-    // 슬롯 선택이면 개별-크기 UI 노출(인덱스 추적), 아니면 숨김.
-    setSlotSizeTarget(kind==='slot' ? index : -1);
+    // 슬롯 기즈모 선택이면 슬롯-크기 슬라이더 대상도 그 슬롯으로 맞춘다(편의). 모델 선택 시엔 그대로 둠(상시 노출).
+    if (kind==='slot') setSlotSizeTarget(index);
     try{ guideReadoutPoke(); }catch(e){}
   }
 
   // ---- 개별 슬롯 크기(slotRow.slotScale[i]) ----
-  let slotSizeIdx=-1;
+  let slotSizeIdx=0;   // 상시 노출 → 기본 대상=슬롯0(슬롯 클릭 없이도 슬라이더 동작)
   function ensureSlotScaleArr(){ const sr=API.slotRow; if(!sr) return null; if(!Array.isArray(sr.slotScale)) sr.slotScale=[1,1,1]; while(sr.slotScale.length<API.slots.length) sr.slotScale.push(1); return sr.slotScale; }
   function getSlotScale(i){ const a=ensureSlotScaleArr(); return (a&&a[i]!=null)?+a[i]:1; }
   function setSlotScale(i, v, opts){
@@ -272,15 +286,44 @@
   }
   function pushSlotScaleUndo(i, from, to){ if(from===to) return; undoStack.push({kind:'slotScale', idx:i, from:+from, to:+to}); if(undoStack.length>UNDO_MAX) undoStack.shift(); redoStack.length=0; updateUndoLabel(); }
   function setSlotSizeTarget(i){
+    if(i<0) i=0;
     slotSizeIdx=i;
-    const w=window.__edSlotSize; if(!w) return;
-    w.style.display = (i>=0) ? 'block' : 'none';
-    if(i>=0) syncSlotSizeUI();
-    // 선택 버튼 하이라이트
-    const sr=document.querySelectorAll('[data-selbtn]');
-    sr.forEach(b=>{ const l=b.dataset.selbtn; const on=(i>=0 && l===('슬롯'+i)); b.classList.toggle('on', on); });
+    syncSlotSizeUI();
+    // 슬롯 크기 섹션의 슬롯0/1/2 픽 버튼 하이라이트(상시 노출 — 숨기지 않는다).
+    document.querySelectorAll('[data-slotpick]').forEach(b=>{ b.classList.toggle('on', +b.dataset.slotpick===i); });
   }
   function syncSlotSizeUI(){ const e=window.__edSlotSizeEls; if(!e||slotSizeIdx<0) return; const v=getSlotScale(slotSizeIdx); e.s.value=v; e.n.value=fmt(v); }
+
+  // ---- 모델 전체 크기/높이 슬라이더(MODEL_OFFSET.scaleMul / offY) — 상시 노출 ----
+  //   VOXEL_SIZE(복셀 1개)와 달리 '모델 통째 배율'(scaleMul)·'모델 수직위치'(offY)를 직접 조절. live=rebuildVoxelMesh.
+  function getModelOff(key, dflt){ const mo=API.modelOffset||{}; const v=+mo[key]; return isFinite(v)?v:dflt; }
+  function setModelOff(key, v, opts){
+    if(!API.modelOffset) return;
+    API.modelOffset[key]=+v;
+    (cfg.model=cfg.model||{})[key]=+v;   // override 저장(serialize/bake)
+    try{ API.rebuildVoxelMesh(); }catch(e){}   // 라이브 반영(MODEL_OFFSET 읽어 재프레이밍)
+    if(!opts||!opts.silent){ const r=window.__edModelEls&&window.__edModelEls[key]; if(r){ r.s.value=v; r.n.value=fmt(v); } }
+  }
+  function pushModelOffUndo(key, from, to){ if(from===to) return; undoStack.push({kind:'modelOff', key:key, from:+from, to:+to}); if(undoStack.length>UNDO_MAX) undoStack.shift(); redoStack.length=0; updateUndoLabel(); }
+  window.__edModelEls={};
+  function buildModelSlider(parent, label, key, min, max, step, dflt){
+    const row=el('div','ed-row'); row.appendChild(el('label','ed-lbl', label));
+    const s=el('input','ed-range'); s.type='range'; s.min=min; s.max=max; s.step=step;
+    const n=el('input','ed-num'); n.type='number'; n.min=min; n.max=max; n.step=step;
+    const v0=getModelOff(key, dflt); s.value=v0; n.value=fmt(v0);
+    let from=null;
+    const grab=()=>{ from=getModelOff(key, dflt); };
+    const apply=(val)=>{ val=Math.max(min,Math.min(max,+val)); setModelOff(key, val, {silent:true}); s.value=val; n.value=fmt(val); };
+    s.addEventListener('pointerdown', grab); s.addEventListener('focus', grab);
+    s.addEventListener('input', ()=>apply(s.value));
+    s.addEventListener('change', ()=>{ if(from!=null){ pushModelOffUndo(key, from, +s.value); from=null; } });
+    n.addEventListener('focus', grab);
+    n.addEventListener('input', ()=>apply(n.value));
+    n.addEventListener('change', ()=>{ if(from!=null){ pushModelOffUndo(key, from, +n.value); from=null; } });
+    row.appendChild(s); row.appendChild(n); parent.appendChild(row);
+    window.__edModelEls[key]={ s, n };
+  }
+  function syncModelSliders(){ if(!window.__edModelEls) return; for(const k in window.__edModelEls){ const r=window.__edModelEls[k]; const v=getModelOff(k, k==='scaleMul'?1:0); r.s.value=v; r.n.value=fmt(v); } }
   function gmode(){ return mode==='select'?'translate':mode; }
   function writeBackSel(){
     if(!sel) return;
@@ -386,6 +429,7 @@
     else if (u.kind==='octoSnap' && u.before){ const b=u.before; ['yOff','dist','scale','tiltX','faceY'].forEach(k=>{ API.octo[k]=b[k]; setOverride('octo.'+k,b[k]); }); try{API.refreshSlotOctos();}catch(e){} refreshAllSliders(); }
     else if (u.kind==='modelSnap' && u.before){ const b=u.before; if(API.modelOffset){ ['offX','offY','offZ','scaleMul'].forEach(k=>{ API.modelOffset[k]=b[k]; (cfg.model=cfg.model||{})[k]=b[k]; }); } try{ API.rebuildVoxelMesh(); }catch(e){} if(sel&&sel.kind==='model'&&tc){ modelBase=null; attach(API.modelGroup,'model',-1); } }
     else if (u.kind==='slotScale'){ setSlotScale(u.idx, u.from); if(slotSizeIdx===u.idx) syncSlotSizeUI(); }
+    else if (u.kind==='modelOff'){ setModelOff(u.key, u.from); }
     else if (u.kind==='uiSnap' && u.before){ const o=uiObj(u.sel); for(const k in o) delete o[k]; const b=u.before; ['dx','dy','w','h','scale','rot','font'].forEach(k=>{ if(b[k]) o[k]=b[k]; }); if(b.asset) o.asset=b.asset; const e2=elById(u.sel); if(e2){ e2.style.transform='';e2.style.fontSize='';e2.style.width='';e2.style.height=''; if(!b.asset && e2.tagName!=='IMG') e2.style.backgroundImage=''; } applyUI(u.sel); if(uiMode){ uiOutlineUpdate(); buildUIBar(); } }
   }
 
@@ -472,7 +516,7 @@
     for (const si in cfg.perStage){ const d=cfg.perStage[si]; if(d&&d.data){ const cid=d.modelId||('me'+si); API.VOX_MODELS[cid]={pal:d.pal,data:d.data}; API.MODELS[cid]={vox:true,build:()=>API.buildVox(cid)}; if(API.STAGES[+si]) API.STAGES[+si].modelId=cid; } }
     // 모델 오프셋이 있으면 재프레이밍(rebuildVoxelMesh 안에서 MODEL_OFFSET 적용) → 저장된 이동/크기 복원.
     try{ if(cfg.config.VOXEL_SIZE!=null || (cfg.model&&Object.keys(cfg.model).length)) API.rebuildVoxelMesh(); API.applySlotRow(); API.refreshSlotOctos(); API.rebuildQueueOctos(); ensureUIObserver(); applyAllUI(); }catch(e){}
-    refreshAllSliders(); if(uiMode) buildUIBar();
+    refreshAllSliders(); syncModelSliders(); syncSlotSizeUI(); if(uiMode) buildUIBar();
   }
 
   // ========== 2D 리소스 에디터 — 모든 UI/배경: 위치/크기/회전/이미지교체 ==========
@@ -1438,11 +1482,14 @@
     flash('에디터 준비됨');
   }, 120);
   window.__ED = { API, cfg:()=>cfg, getVal, setVal, save, build, gotoStage, undo:doUndo, selectSlot, selectModel, setMode, undoLen:()=>undoStack.length,
-    // Fix3 검증용: 개별 슬롯 크기 get/set + 현재 타깃 인덱스 + UI 표시여부.
-    slotScale:{ get:getSlotScale, set:(i,v)=>setSlotScale(i,v), target:()=>slotSizeIdx, uiShown:()=>(window.__edSlotSize&&window.__edSlotSize.style.display!=='none'),
+    // Fix3 검증용: 개별 슬롯 크기 get/set + 현재 타깃 인덱스 + UI 표시여부. 픽버튼으로 대상 슬롯 선택(상시 노출).
+    slotScale:{ get:getSlotScale, set:(i,v)=>setSlotScale(i,v), target:()=>slotSizeIdx, pick:(i)=>setSlotSizeTarget(i),
+                uiShown:()=>{ const w=window.__edSlotSize; return !!(w && w.offsetParent!==null && w.style.display!=='none'); },
                 octoScale:(i)=>{ try{ const s=API.slots[i]; return s&&s.octo?+s.octo.scale.x.toFixed(4):null; }catch(e){ return null; } } },
-    // Fix2 검증용: 모델 오프셋 읽기 + 모델 기즈모 모드/축 상태.
+    // Fix2 검증용: 모델 오프셋 읽기 + 모델 크기/높이 슬라이더(상시 노출) set + 표시여부.
     modelOff:()=>({...(API.modelOffset||{})}), modelPos:()=>{ try{ const p=API.modelGroup.position; return {x:+p.x.toFixed(3),y:+p.y.toFixed(3),z:+p.z.toFixed(3)}; }catch(e){ return null; } },
+    modelSize:{ set:(k,v)=>setModelOff(k,v), get:(k)=>getModelOff(k, k==='scaleMul'?1:0),
+                uiShown:()=>{ const r=window.__edModelEls; return !!(r && r.scaleMul && r.scaleMul.s.offsetParent!==null && r.offY && r.offY.s.offsetParent!==null); } },
     gizmoMode:()=>{ try{ return tc?tc.getMode():null; }catch(e){ return null; } }, gizmoAttached:()=>!!(tc&&tc.object), selKind:()=>sel&&sel.kind,
     // 모델 드래그 시뮬레이션(헤드리스): 기즈모 이동 모드로 modelGroup 을 dx,dy,dz 만큼 옮기고 writeBack(=베이크값) 환산.
     simModelDrag:(dx,dy,dz)=>{ selectModel(); setMode('translate'); const o=API.modelGroup; const b=captureSel(); o.position.x+=(+dx||0); o.position.y+=(+dy||0); o.position.z+=(+dz||0); writeBackSel(); commitSelUndo(b); return {pos:{x:+o.position.x.toFixed(3),y:+o.position.y.toFixed(3),z:+o.position.z.toFixed(3)}, off:{...(API.modelOffset||{})}}; },
@@ -1490,15 +1537,18 @@
     // 큐 검증용(요구1 z순서 + 요구2 회전각): setVal 로 큐 파라미터를 바꾸고(=라이브 rebuild) 각 큐 옥토의
     //   row/renderOrder/회전/depthTest/화면중심Y 를 읽는다. screen Y 는 viewCam 투영 → '위 행이 화면 위쪽인지' 판정.
     queue:{ vals:()=>({...API.queue}),
-      // 모든 큐 옥토 상태: { qi,col,row,renderOrder, rotY:실제 rotation.y, screenY:화면중심 y(px), depthTestOff:파트 depthTest 꺼짐 }
-      octos:()=>{ const T=API.THREE, cam=API.viewCam, v=new T.Vector3(); cam.updateMatrixWorld(true);
+      // 모든 큐 옥토 상태: { qi,col,row,renderOrder, rotY, screenY, worldZ, bodyDepthTestOn:본체 depthTest 정상(켜짐) }
+      //   [회귀수정] body/black/cheeks/mouth 본체 파트의 depthTest 가 true(불투명·단단)인지 확인. worldZ 로 줄별 Z분리(앞줄=큰값) 검증.
+      octos:()=>{ const T=API.THREE, cam=API.viewCam, v=new T.Vector3(), cw=new T.Vector3(); cam.updateMatrixWorld(true);
+        cam.getWorldPosition(cw);
         const cr=API.canvas.getBoundingClientRect();
+        const PARTS=['body','black','cheeks','mouth'];
         return (API.queueOctos||[]).map(e=>{ const o=e.octo; if(!o) return null;
-          o.getWorldPosition(v); v.project(cam);
-          let depthOff=false, partRO=null;
-          o.traverse(m=>{ if(m.isMesh && m.material){ const nm=(m.material.name||''); if(/@q$/.test(nm)){ if(m.material.depthTest===false) depthOff=true; partRO=m.renderOrder; } } });
-          return { qi:e.qi, col:e.col, row:e.row, renderOrder:o.renderOrder, partRenderOrder:partRO,
-                   rotY:+o.rotation.y.toFixed(4), depthTestOff:depthOff, isLockKey:!!o.userData.isLockKey,
+          o.getWorldPosition(v); const wz=+v.z.toFixed(3); const camDist=+v.distanceTo(cw).toFixed(3); v.project(cam);
+          let bodyDepthOn=true, anyBody=false;
+          o.traverse(m=>{ if(m.isMesh && m.material){ const nm=(m.material.name||'').replace(/@q$/,''); if(PARTS.indexOf(nm)>=0){ anyBody=true; if(m.material.depthTest!==true||m.material.depthWrite!==true) bodyDepthOn=false; } } });
+          return { qi:e.qi, col:e.col, row:e.row, renderOrder:o.renderOrder, worldZ:wz, camDist:camDist,
+                   rotY:+o.rotation.y.toFixed(4), bodyDepthTestOn:(anyBody?bodyDepthOn:true), isLockKey:!!o.userData.isLockKey,
                    screenY:Math.round(cr.top+(-v.y*0.5+0.5)*cr.height), screenX:Math.round(cr.left+(v.x*0.5+0.5)*cr.width) }; }).filter(Boolean); },
       // 슬롯 문어/모델 머티리얼이 큐 변경에 오염 안 됐는지(공유 머티리얼 depthTest 가 살아있는지) 확인.
       slotDepthIntact:function(){
