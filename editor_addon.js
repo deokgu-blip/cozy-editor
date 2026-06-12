@@ -47,11 +47,13 @@
       {path:'queue.colGap', label:'좌우 간격', min:0.4, max:3.2, step:0.02},
       {path:'queue.rowGap', label:'상하 간격', min:0.3, max:2.6, step:0.02},
       {path:'queue.baseY', label:'상하(Y)', min:-5, max:0.5, step:0.02},
-      // 큐 기본 회전각(yaw): faceY(=-35° 기준각) 에 더해지는 사용자 미세조정. 라디안(-π~π). 기본 0=배포 외형 동일.
-      //   ±3.1416 ≈ ±180°. (인게임 baseFaceY 는 -0.611rad ≈ -35°; rotY 로 그 주변을 좌우로 더 돌린다.)
-      {path:'queue.rotY', label:'기본 회전각(yaw, rad)', min:-3.1416, max:3.1416, step:0.01},
-      {path:'queue.faceY', label:'기준 좌우각(faceY, rad)', min:-3.1416, max:3.1416, step:0.01},
-      {path:'queue.tiltX', label:'상하각(tilt)', min:-1.2, max:1.2, step:0.01},
+      // 큐 '카메라 각도'(오빗): 각 문어 제자리 회전(rotY)이 아니라, 큐 센트로이드(C) 기준으로 큐 전체를
+      //   바라보는 시점을 좌우/상하로 돌린다(queuePivot.rotation). 여러 문어가 시차(parallax)를 두고 함께 기운다.
+      //   범위 ±0.6rad(≈±35°). 기본 0 → 큐가 blasterRig 직속 시절과 픽셀 동일(배포 외형 무변화).
+      {path:'queue.camYaw',   label:'큐 카메라 좌우각(yaw)',  min:-0.6, max:0.6, step:0.01},
+      {path:'queue.camPitch', label:'큐 카메라 상하각(pitch)', min:-0.6, max:0.6, step:0.01},
+      {path:'queue.faceY', label:'문어 기준 좌우각(faceY, rad)', min:-3.1416, max:3.1416, step:0.01},
+      {path:'queue.tiltX', label:'문어 상하각(tilt)', min:-1.2, max:1.2, step:0.01},
     ]},
   ];
 
@@ -72,6 +74,8 @@
   function applyLive(path){
     if (path==='config.VOXEL_SIZE'){ try{ API.rebuildVoxelMesh(); }catch(e){} return; }
     if (path.indexOf('octo.')===0){ try{ API.refreshSlotOctos(); }catch(e){} return; }
+    // 큐 카메라 각도(camYaw/camPitch): 큐 옥토를 재생성하지 않고 피벗 회전만 갱신(트윈/팝 애니 보존, 즉시 오빗).
+    if (path==='queue.camYaw' || path==='queue.camPitch'){ try{ if(API.applyQueuePivot) API.applyQueuePivot(); else API.rebuildQueueOctos(); }catch(e){} return; }
     if (path.indexOf('queue.')===0){ try{ API.rebuildQueueOctos(); }catch(e){} return; }
     if (path.indexOf('slotRow.')===0){ try{ API.applySlotRow(); }catch(e){} return; }
     // config.* (bullet/fire/rotation) read per-frame → instant; puffMax via setter below
