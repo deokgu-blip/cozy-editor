@@ -194,14 +194,14 @@
     buildModelSlider(panel, '모델 높이',     'offY',     -6,  6,   0.05, 0);
     panel.appendChild(el('div','ed-tip','"모델 전체 크기"=모델 통째 배율 · "모델 높이"=위/아래 위치. (복셀 1개 크기는 위 "일반 › 복셀 크기")'));
 
-    // ── 슬롯 크기 (상시 노출) — slotRow.slotScale[i]. 슬롯0~(SLOTS-1) 버튼으로 대상 선택 후 슬라이더. 슬롯 클릭 불필요. ──
+    // ── 슬롯 박스 크기 (상시 노출) — slotRow.slotScale[i] = .slot 사각형(박스) 배율. 문어 크기는 안 건드림(공통 OCTO.scale). ──
     //   버튼은 활성 슬롯 수(API.SLOTS, 기본 5)만큼 동적 생성 — 하드코딩 3 제거.
-    panel.appendChild(el('div','ed-sec','슬롯 크기 (개별 슬롯)'));
+    panel.appendChild(el('div','ed-sec','슬롯 박스 크기 (개별 슬롯)'));
     const ssWrap=el('div','ed-slotsize'); window.__edSlotSize=ssWrap;
     const ssPick=el('div','ed-row'); ssPick.style.flexWrap='wrap'; ssPick.appendChild(el('label','ed-lbl','슬롯 선택'));
     for(let i=0;i<slotCount();i++){ const b=el('button','ed-btn','슬롯'+i); b.dataset.slotpick=i; b.style.flex='1'; b.style.minWidth='44px'; b.onclick=()=>setSlotSizeTarget(i); ssPick.appendChild(b); }
     ssWrap.appendChild(ssPick);
-    const ssRow=el('div','ed-row'); ssRow.appendChild(el('label','ed-lbl','이 슬롯 크기'));
+    const ssRow=el('div','ed-row'); ssRow.appendChild(el('label','ed-lbl','이 슬롯 박스 크기'));
     const ssS=el('input','ed-range'); ssS.type='range'; ssS.min=0.3; ssS.max=2.0; ssS.step=0.01;
     const ssN=el('input','ed-num'); ssN.type='number'; ssN.min=0.3; ssN.max=2.0; ssN.step=0.01;
     let ssDragFrom=null;
@@ -214,7 +214,7 @@
     ssN.addEventListener('input', ()=>ssApply(ssN.value));
     ssN.addEventListener('change', ()=>{ if(ssDragFrom!=null&&slotSizeIdx>=0){ pushSlotScaleUndo(slotSizeIdx, ssDragFrom, +ssN.value); ssDragFrom=null; } });
     ssRow.appendChild(ssS); ssRow.appendChild(ssN); ssWrap.appendChild(ssRow);
-    ssWrap.appendChild(el('div','ed-tip','슬롯 버튼 선택 후 슬라이더로 그 슬롯만 크기 조절. 1=공통 크기. (전체 크기는 위 "슬롯 문어 › 크기")'));
+    ssWrap.appendChild(el('div','ed-tip','슬롯 버튼 선택 후 슬라이더로 그 슬롯의 사각형(박스)만 키움. 1=기본 박스. 문어 크기는 위 "슬롯 문어 › 크기"에서.'));
     window.__edSlotSizeEls={ s:ssS, n:ssN };
     panel.appendChild(ssWrap);
 
@@ -284,7 +284,7 @@
     a[i]=+v;
     // override 저장(배열 통째로 → bake/serialize). slotRow 그룹 아래 slotScale 키.
     (cfg.slotRow=cfg.slotRow||{}).slotScale=a.slice();
-    // 라이브: 해당 슬롯 문어 크기만 갱신(refreshSlotOctos 는 slotScaleFor 사용 → 즉시 반영).
+    // 라이브: 슬롯 '박스(.slot 사각형)' 크기만 갱신(refreshSlotOctos → applySlotRow 가 박스 scale 적용; 문어는 불변).
     try{ API.refreshSlotOctos(); }catch(e){}
     if(!opts||!opts.silent){ syncSlotSizeUI(); }
   }
@@ -1509,7 +1509,9 @@
     // Fix3 검증용: 개별 슬롯 크기 get/set + 현재 타깃 인덱스 + UI 표시여부. 픽버튼으로 대상 슬롯 선택(상시 노출).
     slotScale:{ get:getSlotScale, set:(i,v)=>setSlotScale(i,v), target:()=>slotSizeIdx, pick:(i)=>setSlotSizeTarget(i),
                 uiShown:()=>{ const w=window.__edSlotSize; return !!(w && w.offsetParent!==null && w.style.display!=='none'); },
-                octoScale:(i)=>{ try{ const s=API.slots[i]; return s&&s.octo?+s.octo.scale.x.toFixed(4):null; }catch(e){ return null; } } },
+                octoScale:(i)=>{ try{ const s=API.slots[i]; return s&&s.octo?+s.octo.scale.x.toFixed(4):null; }catch(e){ return null; } },
+                // Fix2 검증: 슬롯 박스(.slot) 실제 렌더 폭(px) — 박스 scale 반영 측정. 문어 scale(octoScale)은 불변이어야.
+                boxW:(i)=>{ try{ const sl=document.getElementById('slots-row').children[i]; return sl?+sl.getBoundingClientRect().width.toFixed(2):null; }catch(e){ return null; } } },
     // Fix2 검증용: 모델 오프셋 읽기 + 모델 크기/높이 슬라이더(상시 노출) set + 표시여부.
     modelOff:()=>({...(API.modelOffset||{})}), modelPos:()=>{ try{ const p=API.modelGroup.position; return {x:+p.x.toFixed(3),y:+p.y.toFixed(3),z:+p.z.toFixed(3)}; }catch(e){ return null; } },
     modelSize:{ set:(k,v)=>setModelOff(k,v), get:(k)=>getModelOff(k, k==='scaleMul'?1:0),

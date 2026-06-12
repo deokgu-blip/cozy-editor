@@ -57,10 +57,15 @@
   const devSel=document.getElementById('dev');
   let igMode='ingame';
 
+  // 🔄 캐시버스트: 빌드 시 build_editor.py 가 1781241864 를 타임스탬프로 치환(정적 배포). 치환 안 됐으면(=원본 셸)
+  //   Date.now() 폴백 → iframe(editor.html / lobby_editor.html)이 항상 최신 버전을 받아 '에디터에 반영 안 됨'(캐시) 방지.
+  const BUILD_VER = (function(){ const t='1781241864'; return /^\d+$/.test(t) ? t : String(Date.now()); })();
+  function verQS(){ return '&v='+BUILD_VER; }
+
   // 현재 선택 기기 → ?res=WxH 쿼리(없으면 빈문자열). 모든 iframe src 빌드에 공통 적용 → 기기 바꿔도 모드 유지.
   function resQS(){ const v=devSel.value; return v?('&res='+v):''; }
-  function igSrc(){ return igMode==='making' ? ('editor.html?making=1'+resQS()) : ('editor.html?stage=1'+resQS()); }
-  function loSrc(){ return (lo.dataset.src||'lobby_editor.html') + (resQS()?('?'+resQS().slice(1)):''); }
+  function igSrc(){ return (igMode==='making' ? ('editor.html?making=1'+resQS()) : ('editor.html?stage=1'+resQS()))+verQS(); }
+  function loSrc(){ const q=(resQS()+verQS()).slice(1); return (lo.dataset.src||'lobby_editor.html') + (q?('?'+q):''); }
 
   function show(which){
     ig.classList.toggle('on', which==='ig'||which==='mk');
