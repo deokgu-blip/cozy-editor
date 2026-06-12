@@ -137,7 +137,10 @@ body.ed-previewing .ed-guide-layer{ display:none !important; }
    게임(#fit-root)을 왼쪽 절반으로 transform 이동 → 그 transform 이 fixed 자식(HUD)도 함께 끌고감
    (transform 건 요소는 자손 position:fixed 의 컨테이닝블록이 됨). 참조는 오른쪽에 같은 스케일·크기로 별도 배치.
    sbsRefBox 는 JS(sbsTrack)가 게임박스(#game-container)와 동일 픽셀 크기·세로위치로, 오른쪽으로 나란히 둔다. */
-body.ed-sbs #fit-root{ transition:transform .12s ease; }
+/* ★ transition 제거: sbsCompute 가 매 프레임 transform 을 '' 로 비웠다 복원하며 측정하므로, transition 이 있으면
+   매 프레임 identity 로 되돌아가는 애니메이션이 재시작되어 computed transform 이 영영 목표에 도달 못 한다(게임이
+   안 옮겨지고 참조박스와 겹침). transition 없이 즉시 적용 → 게임/참조가 정확히 나란히 자리잡는다. */
+body.ed-sbs #fit-root{ transition:none; }
 .ed-sbs-ref{ position:fixed; z-index:99989; display:none; overflow:hidden; pointer-events:none;
   background:#0b0f15; border:1px solid #2b3647; border-radius:8px; box-shadow:0 8px 30px #000a; }
 .ed-sbs-ref img{ position:absolute; inset:0; width:100%; height:100%; object-fit:fill; image-rendering:auto; pointer-events:none; }
