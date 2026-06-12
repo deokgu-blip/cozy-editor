@@ -587,7 +587,8 @@
       {id:'make-hammer', label:'· 망치 진행원', img:true},
       {id:'make-bar',    label:'· 진행 바'},
       {id:'make-btn',    label:'큐브 버튼', img:true},
-      {id:'make-next',   label:'계속 버튼', img:true, font:true},
+      // make-next(계속 버튼)은 자동 진행으로 폐기(상시 display:none) → 선택 시 빈 외형만 조절돼 혼란.
+      //   숨김 요소를 잘못 다시 켜는 footgun 방지를 위해 트리에서 제외(배포 외형 무영향).
       {id:'make-home',   label:'홈 버튼', img:true},
       {id:'make-pct',    label:'퍼센트 숫자', font:true},
     ]},
@@ -774,12 +775,12 @@
         r.appendChild(s); r.appendChild(n); uiBar.appendChild(r);
       };
       if(uiSel.id[0]!=='@'){
-        mkPair('좌우(X)','dx',-300,300,1);
-        mkPair('상하(Y)','dy',-300,300,1);
-        mkPair('크기','scale',0.2,4,0.01);
+        mkPair('가로위치(좌우)','dx',-300,300,1);
+        mkPair('높이(상하)','dy',-600,600,1);
+        mkPair('크기(scale)','scale',0.2,4,0.01);
         mkPair('회전(°)','rot',-180,180,1);
-        mkPair('폭(px)','w',0,400,1);
-        mkPair('높이(px)','h',0,400,1);
+        mkPair('가로크기(폭px)','w',0,400,1);
+        mkPair('세로크기(높이px)','h',0,400,1);
         if(meta.font) mkPair('폰트(px)','font',8,64,1);
       }
       // 이미지 교체 드롭존(이미지 가능 요소만)
