@@ -47,7 +47,10 @@
       {path:'queue.colGap', label:'좌우 간격', min:0.4, max:3.2, step:0.02},
       {path:'queue.rowGap', label:'상하 간격', min:0.3, max:2.6, step:0.02},
       {path:'queue.baseY', label:'상하(Y)', min:-5, max:0.5, step:0.02},
-      {path:'queue.faceY', label:'좌우각(yaw)', min:0, max:6.283, step:0.01},
+      // 큐 기본 회전각(yaw): faceY(=-35° 기준각) 에 더해지는 사용자 미세조정. 라디안(-π~π). 기본 0=배포 외형 동일.
+      //   ±3.1416 ≈ ±180°. (인게임 baseFaceY 는 -0.611rad ≈ -35°; rotY 로 그 주변을 좌우로 더 돌린다.)
+      {path:'queue.rotY', label:'기본 회전각(yaw, rad)', min:-3.1416, max:3.1416, step:0.01},
+      {path:'queue.faceY', label:'기준 좌우각(faceY, rad)', min:-3.1416, max:3.1416, step:0.01},
       {path:'queue.tiltX', label:'상하각(tilt)', min:-1.2, max:1.2, step:0.01},
     ]},
   ];
@@ -1479,6 +1482,31 @@
          select:(id)=>selectUI(UI_META[id]||UI_TREE[0].items[0]),
          set:(id,k,v)=>{ uiPushUndo(id); uiObj(id)[k]=v; applyUI(id); uiOutlineUpdate(); syncUIBar(); buildTreeDots&&buildTreeDots(); },
          setAsset:(id,uri)=>{ uiPushUndo(id); uiObj(id).asset=uri; applyUI(id); if(uiMode)buildUIBar(); },
-         get:(id)=>({...uiObj(id)}) } };
+         get:(id)=>({...uiObj(id)}) },
+    // 큐 검증용(요구1 z순서 + 요구2 회전각): setVal 로 큐 파라미터를 바꾸고(=라이브 rebuild) 각 큐 옥토의
+    //   row/renderOrder/회전/depthTest/화면중심Y 를 읽는다. screen Y 는 viewCam 투영 → '위 행이 화면 위쪽인지' 판정.
+    queue:{ vals:()=>({...API.queue}),
+      // 모든 큐 옥토 상태: { qi,col,row,renderOrder, rotY:실제 rotation.y, screenY:화면중심 y(px), depthTestOff:파트 depthTest 꺼짐 }
+      octos:()=>{ const T=API.THREE, cam=API.viewCam, v=new T.Vector3(); cam.updateMatrixWorld(true);
+        const cr=API.canvas.getBoundingClientRect();
+        return (API.queueOctos||[]).map(e=>{ const o=e.octo; if(!o) return null;
+          o.getWorldPosition(v); v.project(cam);
+          let depthOff=false, partRO=null;
+          o.traverse(m=>{ if(m.isMesh && m.material){ const nm=(m.material.name||''); if(/@q$/.test(nm)){ if(m.material.depthTest===false) depthOff=true; partRO=m.renderOrder; } } });
+          return { qi:e.qi, col:e.col, row:e.row, renderOrder:o.renderOrder, partRenderOrder:partRO,
+                   rotY:+o.rotation.y.toFixed(4), depthTestOff:depthOff, isLockKey:!!o.userData.isLockKey,
+                   screenY:Math.round(cr.top+(-v.y*0.5+0.5)*cr.height), screenX:Math.round(cr.left+(v.x*0.5+0.5)*cr.width) }; }).filter(Boolean); },
+      // 슬롯 문어/모델 머티리얼이 큐 변경에 오염 안 됐는지(공유 머티리얼 depthTest 가 살아있는지) 확인.
+      slotDepthIntact:function(){
+        try{
+          for(let i=0;i<API.slots.length;i++){
+            const s=API.slots[i]; if(!s||!s.octo) continue;
+            let bad=false;
+            s.octo.traverse(m=>{ if(m.isMesh&&m.material&&m.material.depthTest===false) bad=true; });
+            if(bad) return false;
+          }
+          return true;
+        }catch(e){ return true; }
+      } } };
   });
 })();
