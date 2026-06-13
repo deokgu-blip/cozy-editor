@@ -4,27 +4,42 @@
   "FIRE_INTERVAL": 0.05
  },
  "octo": {
-  "yOff": -1.55,
+  "yOff": -1.32,
   "dist": 13.003885424585281,
-  "scale": 0.86,
+  "scale": 0.61,
   "tiltX": 0.18,
   "faceY": 3.141592653589793
  },
  "queue": {
-  "scale": 0.82,
+  "scale": 0.61,
   "cols": 3,
   "rowsPer": 3,
-  "colGap": 1.04,
-  "rowGap": 0.82,
-  "baseY": -2.62
+  "colGap": 0.64,
+  "rowGap": 0.5,
+  "baseY": -2.58,
+  "tiltX": 0.78,
+  "faceY": -0.3316,
+  "camPitch": 0.01
  },
  "puffMax": 0.1,
+ "model": {
+  "offY": -0.5,
+  "scaleMul": 0.9
+ },
  "slotRow": {
-  "y": -30
+  "y": -50,
+  "slotScale": [
+   0.85,
+   0.85,
+   0.85,
+   0.85,
+   0.85
+  ],
+  "gap": 0
  },
  "ui": {
   "preview-strip": {
-   "dy": 12
+   "dy": 45
   },
   "coin-pill": {
    "dy": 10,
@@ -32,8 +47,8 @@
    "dx": -17
   },
   "coin-bg": {
-   "scale": 0.77,
-   "dx": 4
+   "scale": 0.94,
+   "dx": 14
   },
   "powerups": {
    "dy": -19,
@@ -42,16 +57,17 @@
    "h": 84
   },
   "coin-amount": {
-   "dx": -3
+   "dx": 8,
+   "scale": 1.38
   },
   "level-label": {
-   "dy": 10,
-   "dx": -43,
-   "scale": 0.83
+   "dy": 11,
+   "dx": -30,
+   "scale": 1.03
   },
   "settings-btn": {
-   "dy": 1,
-   "scale": 0.71
+   "dy": 43,
+   "scale": 0.83
   },
   "make-label": {
    "dy": -21
@@ -61,6 +77,12 @@
   },
   "make-home": {
    "hidden": true
+  },
+  "coin-icon": {
+   "scale": 1.22
+  },
+  "hud-top": {
+   "dy": 39
   }
  }
 }
